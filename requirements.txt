@@ -1,0 +1,7 @@
+google-generativeai
+mcp
+python-dotenv
+PyPDF2
+langchain
+langchain-google-genai
+chromadb
