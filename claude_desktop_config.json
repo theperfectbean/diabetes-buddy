@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "diabetes-buddy": {
+      "command": "python",
+      "args": [
+        "/home/gary/diabetes-buddy/mcp_server.py"
+      ],
+      "env": {
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}"
+      }
+    }
+  }
+}

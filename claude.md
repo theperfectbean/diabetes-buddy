@@ -40,6 +40,27 @@ Three specialized agents work in sequence:
 - Prevents harmful advice
 - Located: `agents/safety.py`
 
+## Data Ingestion Module
+
+### Glooko Integration Agent
+- **Purpose**: Parse Glooko CSV exports and provide data analysis
+- **Location**: `agents/data_ingestion.py`
+- **Data Sources**: Blood glucose (BGM/CGM), insulin delivery, carbs, exercise, notes
+- **Output**: Structured analysis for Researcher Agent consumption
+- **Safety**: All outputs must pass through Safety Auditor before user display
+
+### Analysis Capabilities
+- Time-in-range calculations (70-180 mg/dL targets)
+- Pattern recognition (dawn phenomenon, post-meal spikes)
+- Insulin sensitivity trends
+- Contextual recommendations referencing Think Like a Pancreas strategies
+- Equipment performance insights (CamAPS modes, pump behavior correlations)
+
+### Data Privacy
+- All Glooko exports stored in `data/glooko/` (gitignored)
+- Contains PII - never commit to version control
+- Local processing only - no external uploads
+
 ## Safety Requirements (CRITICAL)
 - ❌ NEVER provide specific insulin doses (e.g., "take 3 units")
 - ✅ ALWAYS include disclaimer: "This is educational information. Consult your healthcare provider."
@@ -61,7 +82,10 @@ diabetes-buddy/
 ├── agents/ # Agent modules
 │ ├── triage.py
 │ ├── researcher.py
-│ └── safety.py
+│ ├── safety.py
+│ └── data_ingestion.py
+├── data/ # User data (gitignored)
+│ └── glooko/ # Glooko CSV exports
 ├── docs/ # Knowledge source PDFs
 │ ├── think_like_pancreas.pdf
 │ ├── ypsomed_manual.pdf

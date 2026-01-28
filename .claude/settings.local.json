@@ -1,7 +1,36 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(test:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(python -m agents.researcher:*)",
+      "Bash(curl:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(pip show:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(python -m agents.triage:*)",
+      "Bash(timeout 30 python:*)",
+      "Bash(python -m agents.safety:*)",
+      "Bash(python -c \"\nfrom agents.safety import SafetyAuditor\n\nauditor = SafetyAuditor\\(\\)\nresult = auditor.audit_text\\(''Try increasing your basal by 2 units overnight.''\\)\nprint\\(''Severity:'', result.max_severity.value\\)\nprint\\(''Findings:'', len\\(result.findings\\)\\)\nfor f in result.findings:\n    print\\(f''  [{f.severity.value}] {f.original_text}''\\)\nprint\\(''Output:'', result.safe_response[:80]\\)\n\")",
+      "Bash(python -c:*)",
+      "Bash(python -m diabuddy:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(node --check:*)",
+      "Bash(timeout 10 .venv/bin/python:*)",
+      "Bash(docker:*)",
+      "Bash(timeout 15 .venv/bin/python:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs:*)",
+      "Bash(pkill:*)",
+      "Bash(ip addr:*)",
+      "Read(//home/gary/diabetes-buddy/**)",
+      "Bash(python -m agents.data_ingestion:*)",
+      "Bash(chmod:*)",
+      "Bash(python scripts/test_analyzer.py:*)",
+      "Bash(python scripts/analyze_and_advise.py:*)"
     ]
   }
 }

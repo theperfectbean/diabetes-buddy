@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diabetes Buddy - Chat Interface</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header" role="banner">
+            <div class="header-content">
+                <h1>Diabetes Buddy</h1>
+                <p class="subtitle">AI-powered diabetes management assistant</p>
+            </div>
+            <div class="header-actions">
+                <button id="exportBtn" class="header-btn" aria-label="Export conversation" title="Export chat">
+                    Export
+                </button>
+                <button id="newChatBtn" class="header-btn" aria-label="Start new conversation" title="New chat">
+                    New Chat
+                </button>
+            </div>
+        </header>
+
+        <!-- Chat Container -->
+        <main class="chat-container" role="main" aria-label="Chat conversation">
+            <!-- Chat History -->
+            <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-label="Chat messages">
+                <!-- Messages are loaded dynamically by JavaScript -->
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-area" role="form" aria-label="Send a message">
+                <div class="input-wrapper">
+                    <label for="queryInput" class="visually-hidden">Your question</label>
+                    <input
+                        type="text"
+                        id="queryInput"
+                        class="query-input"
+                        placeholder="Ask a question... e.g., 'How do I change my pump cartridge?'"
+                        autocomplete="off"
+                        aria-describedby="inputHelp"
+                        maxlength="2000"
+                    >
+                    <button id="sendBtn" class="send-btn" aria-label="Send message">
+                        <span>Send</span>
+                        <span class="icon" aria-hidden="true">&#8594;</span>
+                    </button>
+                </div>
+                <div id="inputHelp" class="info-text">
+                    Press Enter to send or click the Send button
+                </div>
+            </div>
+        </main>
+
+        <!-- Sidebar - Sources -->
+        <aside class="sidebar" role="complementary" aria-label="Knowledge sources">
+            <div class="sidebar-section">
+                <h3>Knowledge Sources</h3>
+                <div id="sourcesList" class="sources-list" role="list">
+                    <div class="source-item loading" role="listitem">Loading sources...</div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Modal for source details -->
+    <div id="responseModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-content">
+            <button class="modal-close" aria-label="Close modal">&times;</button>
+            <div class="modal-body" id="modalBody">
+                <h2 id="modalTitle">Source Details</h2>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>

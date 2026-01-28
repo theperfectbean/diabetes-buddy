@@ -1,32 +1,67 @@
-# Next: Build RAG Researcher Agent
+# Next Steps
 
-Give this prompt to Claude Code:
+The core Diabetes Buddy system is now complete with:
+- CLI interface
+- MCP server (VS Code/Claude Desktop integration)
+- Web interface with full feature set
 
----
+## Suggested Improvements
 
-Build a RAG (Retrieval-Augmented Generation) Researcher Agent that:
+### 1. Production Deployment
+- Add HTTPS support
+- Configure production CORS origins
+- Set up systemd service for auto-start
+- Add environment-based configuration
 
-1. Uses the google-genai SDK to read and search our PDF knowledge base
-2. Implements semantic search using Gemini embeddings
-3. Has specialist methods for each knowledge domain:
-   - search_theory() -> Think Like a Pancreas
-   - search_camaps() -> CamAPS FX algorithm manual
-   - search_ypsomed() -> Ypsomed pump hardware manual
-   - search_libre() -> FreeStyle Libre 3 CGM manual
+### 2. User Authentication (Optional)
+- Add login/signup with OAuth or email
+- Store conversation history in database
+- Per-user rate limiting
 
-4. Returns exact quotes with page numbers and confidence scores
-5. Uses the File API to upload PDFs to Gemini for processing
-6. Stores file handles in a local cache to avoid re-uploading
+### 3. Enhanced Safety
+- Add more dose patterns to detection
+- Integrate with medical terminology database
+- Add confidence thresholds for blocking
 
-Requirements:
-- Save as agents/researcher.py
-- Use google.generativeai for embeddings and file operations
-- Load API key from environment variable GEMINI_API_KEY
-- Include error handling for missing files and API failures
-- Add a simple test in __main__ that searches all four knowledge sources
+### 4. Additional Knowledge Sources
+- Add more diabetes management guides
+- Support for user-uploaded PDFs
+- Integration with diabetes device APIs
 
-File locations are:
-- docs/theory/Think-Like-a-Pancreas*.pdf
-- docs/manuals/algorithm/user_manual_fx_mmoll_commercial_ca.pdf
-- docs/manuals/hardware/YPU_eIFU_REF_700009424_UK-en_V01.pdf
-- docs/manuals/hardware/ART41641-001_rev-A-web.pdf
+### 5. Mobile App
+- React Native or Flutter wrapper
+- Push notifications for reminders
+- Offline mode with cached responses
+
+## Current Architecture
+
+```
+diabetes-buddy/
+├── agents/                    # Core agent pipeline
+│   ├── triage.py             # Query classification
+│   ├── researcher_chromadb.py # RAG with ChromaDB
+│   └── safety.py             # Safety auditing
+├── diabuddy/                  # CLI interface
+├── web/                       # Web interface (FastAPI)
+│   ├── app.py                # Backend API
+│   ├── index.html            # Frontend HTML
+│   └── static/
+│       ├── app.js            # Frontend JavaScript
+│       └── styles.css        # CSS with dark mode
+├── mcp_server.py             # MCP server for IDEs
+└── docs/                      # Knowledge base PDFs
+```
+
+## Quick Start
+
+```bash
+# Web interface
+python web/app.py
+# Open http://localhost:8000
+
+# CLI
+python -m diabuddy
+
+# MCP (VS Code)
+# See VSCODE_QUICKSTART.md
+```

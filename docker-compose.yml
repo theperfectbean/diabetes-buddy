@@ -1,0 +1,32 @@
+# Diabetes Buddy - Docker Compose Configuration
+#
+# Usage:
+#   1. Copy .env.example to .env and add your API key
+#   2. docker compose up -d
+#
+# First run will take 3-5 minutes to build ChromaDB embeddings
+
+services:
+  diabetes-buddy:
+    build: .
+    container_name: diabetes-buddy
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Persist ChromaDB embeddings (avoids re-processing PDFs)
+      - chromadb-cache:/app/.cache/chromadb
+      # Optional: Mount local docs for easy updates
+      # - ./docs:/app/docs:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  chromadb-cache:
+    name: diabetes-buddy-chromadb

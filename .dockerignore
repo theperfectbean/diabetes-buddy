@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+ENV
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Cache (will be created fresh in container)
+.cache
+
+# Environment files (secrets passed via env vars)
+.env
+.env.*
+
+# Documentation (not needed in container)
+*.md
+!docs/**/*.md
+
+# Claude Code
+.claude
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+
+# Build artifacts
+dist
+build
+*.egg-info
+
+# Logs
+*.log
+logs
+
+# OS
+.DS_Store
+Thumbs.db
