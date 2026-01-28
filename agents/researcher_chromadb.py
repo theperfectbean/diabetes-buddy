@@ -18,7 +18,7 @@ import hashlib
 
 import chromadb
 from chromadb.config import Settings
-from google import genai
+from .llm_provider import LLMFactory, GenerationConfig
 import PyPDF2
 
 
@@ -67,14 +67,8 @@ class ChromaDBBackend:
         Args:
             project_root: Path to project root directory
         """
-        # Configure API key
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set")
-        
-        self.client = genai.Client(api_key=api_key)
-        self.model_name = "gemini-2.5-flash"
-        self.embedding_model = "models/gemini-embedding-001"
+        # Get LLM provider (configured via LLM_PROVIDER env var)
+        self.llm = LLMFactory.get_provider()
         
         # Set project root
         if project_root is None:
@@ -173,11 +167,7 @@ class ChromaDBBackend:
             List of embedding vectors
         """
         try:
-            result = self.client.models.embed_content(
-                model=self.embedding_model,
-                contents=texts
-            )
-            return [emb.values for emb in result.embeddings]
+            return self.llm.embed_text(texts)
         except Exception as e:
             print(f"Error embedding batch: {e}")
             # Retry with smaller batch on failure
@@ -279,11 +269,7 @@ class ChromaDBBackend:
         
         # Embed query
         try:
-            query_result = self.client.models.embed_content(
-                model=self.embedding_model,
-                contents=[query]
-            )
-            query_embedding = query_result.embeddings[0].values
+            query_embedding = self.llm.embed_text(query)
         except Exception as e:
             print(f"Error embedding query: {e}")
             return []
@@ -360,11 +346,10 @@ Instructions:
 Your answer:"""
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=[prompt]
+            return self.llm.generate_text(
+                prompt=prompt,
+                config=GenerationConfig(temperature=0.7),
             )
-            return response.text.strip()
         except Exception as e:
             print(f"Error generating answer: {e}")
             # Fallback to formatted chunks

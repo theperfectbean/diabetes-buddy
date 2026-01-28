@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 from enum import Enum
 
-from google import genai
+from .llm_provider import LLMFactory, GenerationConfig
 
 # Try ChromaDB backend first, fallback to legacy File API
 try:
@@ -82,12 +82,8 @@ class TriageAgent:
         Args:
             project_root: Path to project root (passed to ResearcherAgent)
         """
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set")
-
-        self.client = genai.Client(api_key=api_key)
-        self.model_name = "gemini-2.5-flash"
+        # Get LLM provider (configured via LLM_PROVIDER env var)
+        self.llm = LLMFactory.get_provider()
         self.researcher = ResearcherAgent(project_root=project_root)
 
     def classify(self, query: str) -> Classification:
@@ -127,12 +123,10 @@ Rules:
 - List secondary_categories only if they might have supplementary info"""
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=[classification_prompt],
+            response_text = self.llm.generate_text(
+                prompt=classification_prompt,
+                config=GenerationConfig(temperature=0.3),
             )
-
-            response_text = response.text.strip()
 
             # Handle markdown code blocks
             if response_text.startswith("```"):
@@ -258,11 +252,10 @@ Example style: "When changing your infusion set, make sure the site is clean and
 Your synthesized answer:"""
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=[prompt]
+            return self.llm.generate_text(
+                prompt=prompt,
+                config=GenerationConfig(temperature=0.7),
             )
-            return response.text.strip()
         except Exception as e:
             # Fallback to formatted chunks
             return "Based on the knowledge base:\n\n" + "\n\n".join([

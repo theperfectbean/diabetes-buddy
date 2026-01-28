@@ -1,0 +1,219 @@
+{
+  "models": {
+    "gemini": {
+      "gemini-2.5-flash": {
+        "context_window": 1000000,
+        "max_output_tokens": 8192,
+        "supports_embeddings": true,
+        "supports_file_upload": true,
+        "supports_vision": true,
+        "cost_per_million_input_tokens": 0.075,
+        "cost_per_million_output_tokens": 0.30,
+        "description": "Fast, versatile model with 1M token context. Best for most use cases.",
+        "recommended": true
+      },
+      "gemini-2.5-pro": {
+        "context_window": 2000000,
+        "max_output_tokens": 8192,
+        "supports_embeddings": true,
+        "supports_file_upload": true,
+        "supports_vision": true,
+        "cost_per_million_input_tokens": 1.25,
+        "cost_per_million_output_tokens": 5.00,
+        "description": "Most capable model with 2M token context. Use for complex reasoning tasks.",
+        "recommended": false
+      },
+      "gemini-1.5-flash": {
+        "context_window": 1000000,
+        "max_output_tokens": 8192,
+        "supports_embeddings": true,
+        "supports_file_upload": true,
+        "supports_vision": true,
+        "cost_per_million_input_tokens": 0.075,
+        "cost_per_million_output_tokens": 0.30,
+        "description": "Previous generation fast model. Still excellent performance.",
+        "recommended": false
+      },
+      "gemini-1.5-pro": {
+        "context_window": 2000000,
+        "max_output_tokens": 8192,
+        "supports_embeddings": true,
+        "supports_file_upload": true,
+        "supports_vision": true,
+        "cost_per_million_input_tokens": 1.25,
+        "cost_per_million_output_tokens": 5.00,
+        "description": "Previous generation pro model. Use 2.5-pro instead.",
+        "recommended": false
+      },
+      "gemini-embedding-001": {
+        "context_window": 2048,
+        "max_output_tokens": null,
+        "supports_embeddings": true,
+        "supports_file_upload": false,
+        "supports_vision": false,
+        "cost_per_million_input_tokens": 0.00,
+        "cost_per_million_output_tokens": null,
+        "description": "Embedding model for semantic search (768 dimensions). Free tier available.",
+        "recommended": true,
+        "embedding_dimension": 768
+      }
+    },
+    "openai": {
+      "_note": "OpenAI models - not yet implemented, coming soon",
+      "gpt-4-turbo": {
+        "context_window": 128000,
+        "max_output_tokens": 4096,
+        "supports_embeddings": false,
+        "supports_file_upload": true,
+        "supports_vision": true,
+        "cost_per_million_input_tokens": 10.00,
+        "cost_per_million_output_tokens": 30.00,
+        "description": "Most capable GPT-4 model with vision support.",
+        "recommended": true
+      },
+      "gpt-4o": {
+        "context_window": 128000,
+        "max_output_tokens": 4096,
+        "supports_embeddings": false,
+        "supports_file_upload": true,
+        "supports_vision": true,
+        "cost_per_million_input_tokens": 5.00,
+        "cost_per_million_output_tokens": 15.00,
+        "description": "Optimized GPT-4 with faster response times.",
+        "recommended": true
+      },
+      "text-embedding-3-large": {
+        "context_window": 8191,
+        "max_output_tokens": null,
+        "supports_embeddings": true,
+        "supports_file_upload": false,
+        "supports_vision": false,
+        "cost_per_million_input_tokens": 0.13,
+        "cost_per_million_output_tokens": null,
+        "description": "High-quality embeddings (3072 dimensions).",
+        "recommended": true,
+        "embedding_dimension": 3072
+      }
+    },
+    "anthropic": {
+      "_note": "Anthropic models - not yet implemented, coming soon",
+      "claude-3-5-sonnet-20241022": {
+        "context_window": 200000,
+        "max_output_tokens": 8192,
+        "supports_embeddings": false,
+        "supports_file_upload": true,
+        "supports_vision": true,
+        "cost_per_million_input_tokens": 3.00,
+        "cost_per_million_output_tokens": 15.00,
+        "description": "Most capable Claude model. Excellent for complex reasoning and writing.",
+        "recommended": true
+      },
+      "claude-3-5-haiku-20241022": {
+        "context_window": 200000,
+        "max_output_tokens": 8192,
+        "supports_embeddings": false,
+        "supports_file_upload": true,
+        "supports_vision": true,
+        "cost_per_million_input_tokens": 1.00,
+        "cost_per_million_output_tokens": 5.00,
+        "description": "Fast and affordable Claude model.",
+        "recommended": true
+      }
+    },
+    "ollama": {
+      "_note": "Local Ollama models - not yet implemented, coming soon",
+      "llama3.3": {
+        "context_window": 128000,
+        "max_output_tokens": 8192,
+        "supports_embeddings": false,
+        "supports_file_upload": false,
+        "supports_vision": false,
+        "cost_per_million_input_tokens": 0.00,
+        "cost_per_million_output_tokens": 0.00,
+        "description": "Free local model. Requires Ollama installation.",
+        "recommended": true
+      },
+      "nomic-embed-text": {
+        "context_window": 8192,
+        "max_output_tokens": null,
+        "supports_embeddings": true,
+        "supports_file_upload": false,
+        "supports_vision": false,
+        "cost_per_million_input_tokens": 0.00,
+        "cost_per_million_output_tokens": null,
+        "description": "Free local embeddings model (768 dimensions).",
+        "recommended": true,
+        "embedding_dimension": 768
+      }
+    }
+  },
+  "provider_features": {
+    "gemini": {
+      "file_upload": true,
+      "vision": true,
+      "embeddings": true,
+      "streaming": true,
+      "function_calling": true,
+      "max_file_size_mb": 20,
+      "supported_file_types": ["pdf", "txt", "csv", "json", "png", "jpg", "jpeg", "webp"]
+    },
+    "openai": {
+      "file_upload": true,
+      "vision": true,
+      "embeddings": true,
+      "streaming": true,
+      "function_calling": true,
+      "max_file_size_mb": 512,
+      "supported_file_types": ["pdf", "txt", "csv", "json", "png", "jpg", "jpeg", "webp"]
+    },
+    "anthropic": {
+      "file_upload": true,
+      "vision": true,
+      "embeddings": false,
+      "streaming": true,
+      "function_calling": false,
+      "max_file_size_mb": 10,
+      "supported_file_types": ["pdf", "txt", "csv", "json", "png", "jpg", "jpeg", "webp"]
+    },
+    "ollama": {
+      "file_upload": false,
+      "vision": false,
+      "embeddings": true,
+      "streaming": true,
+      "function_calling": false,
+      "max_file_size_mb": 0,
+      "supported_file_types": []
+    }
+  },
+  "usage_recommendations": {
+    "query_classification": {
+      "recommended_model": "gemini-2.5-flash",
+      "alternative_models": ["gpt-4o", "claude-3-5-haiku-20241022"],
+      "notes": "Fast, lightweight models work best for classification tasks"
+    },
+    "document_search": {
+      "recommended_model": "gemini-2.5-flash",
+      "alternative_models": ["gpt-4-turbo", "claude-3-5-sonnet-20241022"],
+      "notes": "Models with long context windows handle large documents better"
+    },
+    "answer_synthesis": {
+      "recommended_model": "gemini-2.5-flash",
+      "alternative_models": ["claude-3-5-sonnet-20241022", "gpt-4-turbo"],
+      "notes": "Balance quality and cost for conversational responses"
+    },
+    "embeddings": {
+      "recommended_model": "gemini-embedding-001",
+      "alternative_models": ["text-embedding-3-large", "nomic-embed-text"],
+      "notes": "Gemini embeddings are free and high quality"
+    }
+  },
+  "metadata": {
+    "last_updated": "2026-01-28",
+    "version": "1.0.0",
+    "notes": [
+      "Costs are approximate and may change. Check provider websites for current pricing.",
+      "Context windows are maximum values. Actual usable context may be lower.",
+      "Models marked as not implemented are planned for future releases."
+    ]
+  }
+}

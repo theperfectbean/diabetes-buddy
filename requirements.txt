@@ -1,4 +1,4 @@
-google-genai
+google-genai  # Primary LLM provider (optional for future multi-provider support)
 mcp
 python-dotenv
 PyPDF2
@@ -13,3 +13,8 @@ uvicorn[standard]
 pandas>=2.0.0
 numpy>=1.24.0
 scipy>=1.11.0
+
+# Future LLM provider support (optional)
+# openai  # Uncomment to enable OpenAI provider
+# anthropic  # Uncomment to enable Anthropic/Claude provider
+# ollama  # Uncomment to enable local Ollama models

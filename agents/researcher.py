@@ -14,11 +14,10 @@ import hashlib
 import time
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from google import genai
-from google.genai import types
+from .llm_provider import LLMFactory, GenerationConfig
 
 
 @dataclass
@@ -63,13 +62,8 @@ class ResearcherAgent:
             project_root: Path to the project root directory.
                          Defaults to parent of the agents/ directory.
         """
-        # Configure API key
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set")
-
-        # Initialize the Gemini client
-        self.client = genai.Client(api_key=api_key)
+        # Get LLM provider (configured via LLM_PROVIDER env var)
+        self.llm = LLMFactory.get_provider()
 
         # Set project root
         if project_root is None:
@@ -81,14 +75,11 @@ class ResearcherAgent:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         # File handle cache (source_key -> file object)
-        self._file_cache: dict[str, types.File] = {}
+        self._file_cache: dict[str, Any] = {}
 
         # Search result cache (query_hash -> results)
         self._search_cache: dict[str, list[SearchResult]] = {}
         self._cache_max_size = 100  # Limit cache size
-
-        # Model to use
-        self.model_name = "gemini-2.5-flash"
 
     def _get_file_hash(self, file_path: Path) -> str:
         """Calculate MD5 hash of a file for cache invalidation."""
@@ -109,7 +100,7 @@ class ResearcherAgent:
         """Get the cache file path for a source."""
         return self.cache_dir / f"{source_key}.json"
 
-    def _load_cached_file(self, source_key: str, file_path: Path) -> Optional[types.File]:
+    def _load_cached_file(self, source_key: str, file_path: Path) -> Optional[Any]:
         """
         Load a cached file handle if valid.
 
@@ -134,7 +125,7 @@ class ResearcherAgent:
             if not file_name:
                 return None
 
-            gemini_file = self.client.files.get(name=file_name)
+            gemini_file = self.llm.get_file(file_id=file_name)
 
             # Check if file is still active
             if gemini_file.state.name == "ACTIVE":
@@ -145,7 +136,7 @@ class ResearcherAgent:
         except Exception:
             return None
 
-    def _save_file_cache(self, source_key: str, file_path: Path, gemini_file: types.File) -> None:
+    def _save_file_cache(self, source_key: str, file_path: Path, gemini_file: Any) -> None:
         """Save file handle info to cache."""
         cache_path = self._get_cache_path(source_key)
         cache_data = {
@@ -156,7 +147,7 @@ class ResearcherAgent:
         with open(cache_path, "w") as f:
             json.dump(cache_data, f)
 
-    def _get_or_upload_file(self, source_key: str) -> types.File:
+    def _get_or_upload_file(self, source_key: str) -> Any:
         """
         Get a file from cache or upload it to Gemini.
 
@@ -188,23 +179,10 @@ class ResearcherAgent:
 
         # Upload to Gemini
         print(f"Uploading {self.SOURCE_NAMES[source_key]} to Gemini...")
-        gemini_file = self.client.files.upload(
-            file=str(file_path),
-            config=types.UploadFileConfig(
-                display_name=self.SOURCE_NAMES[source_key],
-            ),
+        gemini_file = self.llm.upload_file(
+            file_path=file_path,
+            display_name=self.SOURCE_NAMES[source_key],
         )
-
-        # Wait for processing
-        while gemini_file.state.name == "PROCESSING":
-            print(f"  Processing {self.SOURCE_NAMES[source_key]}...")
-            time.sleep(2)
-            gemini_file = self.client.files.get(name=gemini_file.name)
-
-        if gemini_file.state.name != "ACTIVE":
-            raise RuntimeError(f"File processing failed: {gemini_file.state.name}")
-
-        print(f"  {self.SOURCE_NAMES[source_key]} ready!")
 
         # Cache it
         self._save_file_cache(source_key, file_path, gemini_file)
@@ -294,13 +272,11 @@ Rules:
 - Return empty array if nothing relevant found"""
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=[gemini_file, search_prompt],
+            response_text = self.llm.generate_text(
+                prompt=search_prompt,
+                config=GenerationConfig(temperature=0.3),
+                file_reference=gemini_file,
             )
-
-            # Parse the JSON response
-            response_text = response.text.strip()
 
             # Handle markdown code blocks
             if response_text.startswith("```"):
