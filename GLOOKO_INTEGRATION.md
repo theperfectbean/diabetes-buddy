@@ -21,6 +21,20 @@ The Glooko Integration Module analyzes your diabetes data exports to:
 - **Detect patterns** - Dawn phenomenon, post-meal spikes, insulin sensitivity variations
 - **Generate research questions** - Personalized queries based on your data
 - **Route to knowledge sources** - Connect findings to Think Like a Pancreas, CamAPS FX, and Ypsomed manuals
+- **Cross-reference clinical guidelines** - Validate insights against ADA Standards 2026 and Australian Diabetes Guidelines
+
+### Clinical Guideline Integration
+
+Pattern-based insights are cross-referenced with evidence-based clinical guidelines:
+
+| Analysis Type | Clinical Reference |
+|---------------|-------------------|
+| Glycemic targets (TIR, A1C goals) | ADA Standards 2026 Section 6 |
+| Technology optimization (CGM, pump) | Australian Guidelines Sections 3.1-3.3 |
+| Hybrid closed-loop recommendations | Australian Guidelines Section 3.3 |
+| Complication risk factors | ADA Standards 2026 Sections 10-12 |
+
+This ensures that personalized insights align with current medical standards while practical strategies come from Think Like a Pancreas.
 
 ### What Gets Analyzed
 
@@ -256,6 +270,8 @@ Questions are tagged with the most relevant knowledge source:
 | **Think Like a Pancreas** | Behavioral strategies, dosing theory, lifestyle |
 | **CamAPS FX Guide** | Boost/Ease-off modes, algorithm behavior |
 | **Ypsomed Manual** | Pump features, extended bolus, hardware |
+| **ADA Standards 2026** | Treatment targets, glycemic goals, complication management |
+| **Australian Guidelines** | Technology evidence, CGM/pump recommendations, closed-loop systems |
 
 ---
 
@@ -329,7 +345,198 @@ for query in queries:
 
 ---
 
-## 7. Privacy & Data Safety
+## 7. Glooko Data Queries
+
+### Overview
+
+After uploading and analyzing your Glooko data, you can ask natural language questions directly in the chat interface. The GlookoQueryAgent processes these queries to extract insights from your diabetes metrics.
+
+### Query Types Supported
+
+#### Temporal Queries (Time-based)
+Ask about specific time periods:
+
+```
+"What was my average glucose last week?"
+"Show me my time in range for January 15-20"
+"How many lows did I have in December?"
+"What's my glucose trend this month?"
+```
+
+**Parsing:** Understands relative dates (last week, past 2 weeks) and specific dates (Jan 15-20)
+
+#### Metric Queries (Calculations)
+Ask for specific calculations:
+
+```
+"What's my average glucose?"
+"What's my time in range?"
+"How many hypoglycemic events last month?"
+"What's my coefficient of variation?"
+```
+
+**Returns:** Value with units, context (std dev, readings count), and ADA target comparison
+
+#### Pattern Queries (Recurring phenomena)
+Ask about patterns in your data:
+
+```
+"When do I typically experience dawn phenomenon?"
+"What days had post-meal spikes?"
+"Do I have a pattern around exercise?"
+"Which hours are my glucose most variable?"
+```
+
+**Returns:** Pattern type, confidence score, affected readings, recommendation
+
+#### Trend Queries (Changes over time)
+Ask about glucose trends:
+
+```
+"How did my glucose trend this week?"
+"Is my time in range improving?"
+"What's my insulin sensitivity trend?"
+```
+
+**Returns:** Trend direction, comparison metrics, improvement suggestions
+
+### Query Processing Pipeline
+
+```
+User Question
+    │
+    ├─→ Triage Agent classifies as "glooko_data"
+    │
+    └─→ GlookoQueryAgent:
+        ├─ parse_intent() → Extract metric, time period, aggregation
+        ├─ load_data() → Load latest analysis JSON
+        ├─ execute_query() → Run pandas operations
+        ├─ format_response() → Add context, disclaimers
+        └─ return QueryResult
+    
+    └─→ Safety Auditor reviews response
+    
+    └─→ User receives formatted answer
+```
+
+### Example Query & Response
+
+**User Question:**
+```
+What was my average glucose last week?
+```
+
+**System Response:**
+```
+📊 Your Glooko Data
+✓ INFO
+
+Your average glucose was 142 mg/dL (7.9 mmol/L). 
+Your readings varied by ±35 mg/dL with 24.1% variability. 
+Based on 142 readings from Jan 21-27, 2026.
+
+You spent 68% in range (70-180 mg/dL), which is slightly 
+below the ADA target of 70%. You had 2.3% time above range 
+and 0.5% below.
+
+[Note: This analysis is based on your uploaded Glooko data. 
+Discuss trends with your healthcare team.]
+
+Sources: Your Glooko Data (Jan 21-27, 2026)
+```
+
+### Intent Parsing Examples
+
+The system uses Gemini to understand query intent:
+
+| User Query | Metric Type | Aggregation | Date Range |
+|------------|------------|-------------|-----------|
+| "Average glucose last week?" | glucose | average | last_week |
+| "Time in range this month?" | tir | distribution | last_month |
+| "How many lows?" | events | count | all_time |
+| "When do I dip low?" | pattern | distribution | all_time |
+| "Is my TIR improving?" | trend | comparison | last_2_periods |
+
+### Response Components
+
+Each Glooko data query includes:
+
+1. **Classification Badge** 📊 - Shows "Your Glooko Data" 
+2. **Severity Level** - INFO, WARNING, or BLOCKED (color-coded)
+3. **Main Answer** - Natural language with metrics and units
+4. **Context** - Date range, readings analyzed, comparison to targets
+5. **Disclaimer** - "Discuss with your healthcare team" reminder
+6. **Source Attribution** - "Your Glooko Data" with analysis dates
+
+### Confidence & Limitations
+
+⚠️ **Confidence Levels:**
+- **High (0.9+):** Strong pattern with 100+ readings
+- **Medium (0.7-0.9):** Adequate data for analysis
+- **Low (<0.7):** Limited data or ambiguous query
+
+⚠️ **Data Limitations:**
+- **Recent data only:** Most recent analysis JSON file used
+- **No real-time updates:** Requires new Glooko export for fresh data
+- **Missing fields:** Only shows metrics available in analysis
+- **Small samples:** <20 readings for a period may be inaccurate
+
+### Edge Cases
+
+The system handles gracefully:
+
+| Scenario | Response |
+|----------|----------|
+| No Glooko data uploaded | "Please upload your Glooko export first" |
+| Query about future dates | "I can't query future dates. Latest data: Jan 27, 2026" |
+| No data for date range | "No readings found for Jan 1-5. Data starts from Jan 10" |
+| Ambiguous query | "Could you clarify? Did you mean average glucose or TIR?" |
+| Missing metric type | "That metric isn't available yet. Available: glucose, TIR, patterns" |
+
+### Integration with Knowledge Base
+
+After answering a data query, you can ask follow-up questions:
+
+```
+User: "What was my time in range last week?"
+Buddy: "68% - below the 70% target..."
+
+User: "How can I improve my TIR?"
+Buddy: → Routes to Think Like a Pancreas knowledge base
+        → Returns strategies for improving time in range
+```
+
+### API Reference
+
+**Query Classification:**
+```python
+# From TriageAgent.classify()
+{
+    "category": "glooko_data",  # Not theory, camaps, ypsomed, libre
+    "confidence": 0.95,          # High confidence it's about user's data
+    "reasoning": "Query contains personal metric keywords (my, average, last week)",
+    "secondary_categories": []
+}
+```
+
+**Query Execution:**
+```python
+# From GlookoQueryAgent.process_query()
+result = QueryResult(
+    success=True,
+    answer="Your average glucose was 142 mg/dL...",
+    metric_value=142,
+    metric_unit="mg/dL",
+    date_range_start="Jan 21, 2026",
+    date_range_end="Jan 27, 2026",
+    data_points_used=142,
+    warnings=["Data is 3 days old - consider uploading fresh export"]
+)
+```
+
+---
+
+## 8. Privacy & Data Safety
 
 ### Local Processing Only
 
@@ -373,7 +580,7 @@ rm -rf data/glooko/* data/cache/* data/analysis/*
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### Column Name Mismatches
 

@@ -4,12 +4,14 @@
 Multi-agent system for Type 1 Diabetes management using Retrieval-Augmented Generation (RAG). Acts as a specialized cognitive assistant grounded in clinical theory and technical manuals.
 
 ## Core Mission
-Provide expert-level diabetes guidance without hallucinations by synthesizing three authoritative knowledge sources with a multi-agent architecture that includes mandatory safety guardrails.
+Provide expert-level diabetes guidance without hallucinations by synthesizing five authoritative knowledge sources with a multi-agent architecture that includes mandatory safety guardrails.
 
-## Knowledge Sources (Three Pillars)
+## Knowledge Sources (Five Pillars)
 1. **Behavioral Strategy**: "Think Like a Pancreas" by Gary Scheiner - Real-world insulin logic
 2. **Mechanical Logic**: mylife Ypsomed Pump Manual - Hardware-specific procedures
 3. **Algorithmic Logic**: CamAPS FX User Guide - Hybrid closed-loop system behavior
+4. **CGM Hardware**: FreeStyle Libre 3 Manual - CGM sensor operation and troubleshooting
+5. **Clinical Guidelines**: ADA Standards of Care 2026 + Australian Diabetes Guidelines - Evidence-based clinical recommendations for treatment targets, technology selection, and complication management
 
 ## Technical Stack
 - **Platform**: Debian Linux (Bash)

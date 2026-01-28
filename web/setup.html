@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Base Setup - Diabetes Buddy</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .setup-container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .setup-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .setup-header h1 {
+            color: #2563eb;
+            margin-bottom: 10px;
+        }
+        
+        .setup-header p {
+            color: #6b7280;
+            font-size: 16px;
+        }
+        
+        .setup-step {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+        
+        .setup-step.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .device-selector {
+            margin: 30px 0;
+        }
+        
+        .device-selector label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #374151;
+        }
+        
+        .device-selector select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+        
+        .device-selector select:focus {
+            outline: none;
+            border-color: #2563eb;
+        }
+        
+        .info-box {
+            background: #eff6ff;
+            border-left: 4px solid #2563eb;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .info-box h3 {
+            margin: 0 0 10px 0;
+            color: #1e40af;
+        }
+        
+        .info-box ul {
+            margin: 10px 0 0 20px;
+            color: #1e40af;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+        
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: #1d4ed8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+        
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .progress-container {
+            margin: 30px 0;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2563eb, #3b82f6);
+            width: 0%;
+            transition: width 0.5s ease;
+        }
+        
+        .progress-text {
+            text-align: center;
+            margin-top: 10px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        .source-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            margin: 8px 0;
+            background: #f9fafb;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+        
+        .source-item.fetching {
+            background: #fef3c7;
+        }
+        
+        .source-item.success {
+            background: #d1fae5;
+        }
+        
+        .source-item.error {
+            background: #fee2e2;
+        }
+        
+        .source-name {
+            font-weight: 500;
+            color: #374151;
+        }
+        
+        .source-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-icon {
+            font-size: 20px;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #2563eb;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .completion-message {
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .completion-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        
+        .completion-message h2 {
+            color: #059669;
+            margin-bottom: 15px;
+        }
+        
+        .completion-message p {
+            color: #6b7280;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="setup-container">
+        <!-- Step 1: Welcome -->
+        <div id="step-welcome" class="setup-step active">
+            <div class="setup-header">
+                <h1>🩺 Welcome to Diabetes Buddy</h1>
+                <p>Let's set up your personalized knowledge base</p>
+            </div>
+            
+            <div class="info-box">
+                <h3>How It Works</h3>
+                <p>Diabetes Buddy maintains an autonomous knowledge base that:</p>
+                <ul>
+                    <li>Automatically fetches clinical guidelines (ADA Standards, NHS T1D Guidelines)</li>
+                    <li>Downloads your pump and CGM manuals directly from manufacturers</li>
+                    <li>Stays up-to-date with weekly automatic checks</li>
+                    <li>Provides evidence-based answers with proper citations</li>
+                </ul>
+            </div>
+            
+            <div class="info-box">
+                <h3>Sources We'll Fetch</h3>
+                <ul>
+                    <li><strong>Clinical Guidelines:</strong> ADA Standards of Care 2026, NHS T1D Guidelines, OpenAPS Docs</li>
+                    <li><strong>Your Pump Manual:</strong> Complete user guide from manufacturer</li>
+                    <li><strong>Your CGM Manual:</strong> Sensor and monitoring information</li>
+                </ul>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="goToStep('select')">Get Started →</button>
+            </div>
+        </div>
+        
+        <!-- Step 2: Device Selection -->
+        <div id="step-select" class="setup-step">
+            <div class="setup-header">
+                <h1>Select Your Devices</h1>
+                <p>Choose your insulin pump and CGM</p>
+            </div>
+            
+            <div class="device-selector">
+                <label for="pump-select">Insulin Pump</label>
+                <select id="pump-select">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            
+            <div class="device-selector">
+                <label for="cgm-select">Continuous Glucose Monitor (CGM)</label>
+                <select id="cgm-select">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn btn-secondary" onclick="goToStep('welcome')">← Back</button>
+                <button class="btn btn-primary" id="start-setup-btn" onclick="startSetup()" disabled>Start Setup</button>
+            </div>
+        </div>
+        
+        <!-- Step 3: Fetching -->
+        <div id="step-fetching" class="setup-step">
+            <div class="setup-header">
+                <h1>Building Your Knowledge Base</h1>
+                <p>Fetching sources from manufacturers and organizations...</p>
+            </div>
+            
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="progress-text" id="progress-text">Starting...</div>
+            </div>
+            
+            <div id="sources-list" style="margin-top: 30px;">
+                <!-- Source items will be added here dynamically -->
+            </div>
+        </div>
+        
+        <!-- Step 4: Complete -->
+        <div id="step-complete" class="setup-step">
+            <div class="completion-message">
+                <div class="completion-icon">✅</div>
+                <h2>Knowledge Base Ready!</h2>
+                <p>Your personalized knowledge base has been successfully set up.</p>
+                <p><strong id="sources-count">5</strong> sources fetched and ready to use.</p>
+                
+                <div class="info-box" style="text-align: left; margin-top: 30px;">
+                    <h3>What's Next?</h3>
+                    <ul>
+                        <li>Start asking questions - your answers will be backed by clinical evidence</li>
+                        <li>Automatic updates check weekly for new guidelines and manuals</li>
+                        <li>View knowledge base status anytime in Settings</li>
+                    </ul>
+                </div>
+                
+                <div class="button-group" style="margin-top: 30px;">
+                    <button class="btn btn-primary" onclick="goToDashboard()">Go to Dashboard →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let registry = null;
+        let selectedPump = null;
+        let selectedCGM = null;
+        
+        // Load device registry on page load
+        async function loadRegistry() {
+            try {
+                const response = await fetch('/api/knowledge/registry');
+                registry = await response.json();
+                populateSelectors();
+            } catch (error) {
+                console.error('Failed to load device registry:', error);
+                alert('Failed to load device options. Please refresh the page.');
+            }
+        }
+        
+        function populateSelectors() {
+            const pumpSelect = document.getElementById('pump-select');
+            const cgmSelect = document.getElementById('cgm-select');
+            
+            // Populate pumps
+            pumpSelect.innerHTML = '<option value="">Select your pump...</option>';
+            Object.values(registry.pumps).forEach(pump => {
+                const option = document.createElement('option');
+                option.value = pump.id;
+                option.textContent = `${pump.name} (${pump.manufacturer})`;
+                pumpSelect.appendChild(option);
+            });
+            
+            // Populate CGMs
+            cgmSelect.innerHTML = '<option value="">Select your CGM...</option>';
+            Object.values(registry.cgms).forEach(cgm => {
+                const option = document.createElement('option');
+                option.value = cgm.id;
+                option.textContent = `${cgm.name} (${cgm.manufacturer})`;
+                cgmSelect.appendChild(option);
+            });
+            
+            // Enable button when both selected
+            pumpSelect.addEventListener('change', checkSelections);
+            cgmSelect.addEventListener('change', checkSelections);
+        }
+        
+        function checkSelections() {
+            const pumpSelect = document.getElementById('pump-select');
+            const cgmSelect = document.getElementById('cgm-select');
+            const startBtn = document.getElementById('start-setup-btn');
+            
+            selectedPump = pumpSelect.value;
+            selectedCGM = cgmSelect.value;
+            
+            startBtn.disabled = !(selectedPump && selectedCGM);
+        }
+        
+        function goToStep(stepName) {
+            document.querySelectorAll('.setup-step').forEach(step => {
+                step.classList.remove('active');
+            });
+            document.getElementById(`step-${stepName}`).classList.add('active');
+        }
+        
+        async function startSetup() {
+            goToStep('fetching');
+            
+            const sourcesList = document.getElementById('sources-list');
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            
+            // Create source items (we expect 5: 3 guidelines + 1 pump + 1 CGM)
+            const sources = [
+                { id: 'ada', name: 'ADA Standards of Care 2026' },
+                { id: 'nhs', name: 'NHS T1D Guidelines' },
+                { id: 'openaps', name: 'OpenAPS Documentation' },
+                { id: 'pump', name: registry.pumps[selectedPump].name },
+                { id: 'cgm', name: registry.cgms[selectedCGM].name }
+            ];
+            
+            sources.forEach(source => {
+                const item = document.createElement('div');
+                item.className = 'source-item';
+                item.id = `source-${source.id}`;
+                item.innerHTML = `
+                    <span class="source-name">${source.name}</span>
+                    <span class="source-status">
+                        <span class="status-text">Waiting...</span>
+                    </span>
+                `;
+                sourcesList.appendChild(item);
+            });
+            
+            try {
+                // Call setup API
+                progressText.textContent = 'Contacting servers...';
+                const response = await fetch('/api/knowledge/setup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        pump_id: selectedPump,
+                        cgm_id: selectedCGM
+                    })
+                });
+                
+                const result = await response.json();
+                
+                // Simulate progress updates (since actual fetching happens in backend)
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += 5;
+                    progressFill.style.width = `${progress}%`;
+                    
+                    if (progress >= 100) {
+                        clearInterval(interval);
+                    }
+                }, 300);
+                
+                // Update source statuses based on results
+                let completedCount = 0;
+                for (const [sourceKey, sourceResult] of Object.entries(result.results)) {
+                    completedCount++;
+                    const progress = (completedCount / sources.length) * 100;
+                    progressFill.style.width = `${progress}%`;
+                    progressText.textContent = `Fetching ${completedCount}/${sources.length} sources...`;
+                    
+                    // Determine which UI element to update
+                    let elementId;
+                    if (sourceKey.includes('guideline_ada')) elementId = 'source-ada';
+                    else if (sourceKey.includes('guideline_nhs')) elementId = 'source-nhs';
+                    else if (sourceKey.includes('guideline_openaps')) elementId = 'source-openaps';
+                    else if (sourceKey.includes('pump')) elementId = 'source-pump';
+                    else if (sourceKey.includes('cgm')) elementId = 'source-cgm';
+                    
+                    if (elementId) {
+                        const element = document.getElementById(elementId);
+                        if (sourceResult.success) {
+                            element.classList.add('success');
+                            element.querySelector('.source-status').innerHTML = '<span class="status-icon">✅</span><span class="status-text">Fetched</span>';
+                        } else {
+                            element.classList.add('error');
+                            element.querySelector('.source-status').innerHTML = '<span class="status-icon">❌</span><span class="status-text">Error</span>';
+                        }
+                    }
+                    
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                
+                progressText.textContent = 'Setup complete!';
+                
+                // Count successes
+                const successCount = Object.values(result.results).filter(r => r.success).length;
+                document.getElementById('sources-count').textContent = successCount;
+                
+                // Go to completion after a short delay
+                setTimeout(() => {
+                    goToStep('complete');
+                }, 1500);
+                
+            } catch (error) {
+                console.error('Setup failed:', error);
+                progressText.textContent = 'Setup failed. Please try again.';
+                alert('Setup failed: ' + error.message);
+            }
+        }
+        
+        function goToDashboard() {
+            window.location.href = '/';
+        }
+        
+        // Load registry on page load
+        loadRegistry();
+    </script>
+</body>
+</html>

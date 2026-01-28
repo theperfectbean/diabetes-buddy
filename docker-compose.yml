@@ -17,8 +17,14 @@ services:
     volumes:
       # Persist ChromaDB embeddings (avoids re-processing PDFs)
       - chromadb-cache:/app/.cache/chromadb
-      # Optional: Mount local docs for easy updates
-      # - ./docs:/app/docs:ro
+      # Mount code directories for live updates (no rebuild needed)
+      - ./agents:/app/agents
+      - ./web:/app/web
+      - ./diabuddy:/app/diabuddy
+      # Mount docs for easy updates
+      - ./docs:/app/docs:ro
+      # Persist uploaded data and analysis results
+      - ./data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]

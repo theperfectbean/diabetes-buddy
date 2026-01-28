@@ -32,8 +32,9 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from agents import TriageAgent, SafetyAuditor, Severity
-from agents import GlookoAnalyzer, generate_research_queries
+from agents import TriageAgent, SafetyAuditor, Severity, QueryCategory
+from agents import GlookoAnalyzer, GlookoQueryAgent, generate_research_queries
+from agents.glucose_units import GLUCOSE_UNIT, convert_to_configured_unit
 
 
 # Rate limiter implementation
@@ -71,7 +72,8 @@ AI-powered diabetes management assistant.
 
 ## Features
 - Natural language query processing
-- Multi-source knowledge retrieval (Think Like a Pancreas, CamAPS FX, Ypsomed, Libre 3)
+- Multi-source knowledge retrieval (Think Like a Pancreas, CamAPS FX, Ypsomed, Libre 3, ADA Standards 2026, Australian Guidelines)
+- Clinical guideline citations for evidence-based recommendations
 - Safety auditing with dose detection
 - Severity-based response classification
 
@@ -102,6 +104,7 @@ try:
     logger.info("Initializing Diabetes Buddy agents...")
     triage_agent = TriageAgent()
     safety_auditor = SafetyAuditor()
+    glooko_query_agent = GlookoQueryAgent()
     logger.info("Agents initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize agents: {e}")
@@ -120,13 +123,10 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Initialize Glooko analyzer
 try:
-    glooko_analyzer = GlookoAnalyzer(
-        data_dir=str(GLOOKO_DIR),
-        cache_dir=str(CACHE_DIR)
-    )
+    glooko_analyzer = GlookoAnalyzer(use_cache=True)
     logger.info("Glooko analyzer initialized successfully")
 except Exception as e:
-    logger.warning(f"Glooko analyzer initialization failed (non-fatal): {e}")
+    logger.error(f"Glooko analyzer initialization failed: {e}", exc_info=True)
     glooko_analyzer = None
 
 # Maximum upload size (50MB)
@@ -199,7 +199,8 @@ async def query(request: Request, query_request: QueryRequest) -> QueryResponse:
     Process a diabetes management query.
 
     - Classifies the query to determine relevant knowledge sources
-    - Searches across diabetes management manuals and guides
+    - Routes to GlookoQueryAgent for personal data queries
+    - Searches across diabetes management manuals and guides for knowledge queries
     - Applies safety auditing to detect dangerous content
     - Returns sourced answer with severity classification
     """
@@ -218,6 +219,44 @@ async def query(request: Request, query_request: QueryRequest) -> QueryResponse:
         # Process through triage agent
         triage_response = triage_agent.process(query_request.query)
 
+        # Handle glooko_data queries separately
+        if triage_response.classification.category == QueryCategory.GLOOKO_DATA:
+            logger.info("Query classified as glooko_data - routing to GlookoQueryAgent")
+            query_result = glooko_query_agent.process_query(query_request.query)
+            
+            if not query_result.success:
+                answer = query_result.answer
+            else:
+                answer = query_result.answer
+            
+            # Apply safety auditing
+            safety_result = safety_auditor.audit_text(
+                text=answer,
+                query=query_request.query
+            )
+            
+            # Build sources list for data queries
+            sources = []
+            if query_result.date_range_start:
+                sources.append({
+                    "source": "Your Glooko Data",
+                    "page": None,
+                    "excerpt": f"Analysis period: {query_result.date_range_start} to {query_result.date_range_end}",
+                    "confidence": 1.0,
+                    "full_excerpt": f"Data points used: {query_result.data_points_used}\n{query_result.context}"
+                })
+            
+            return QueryResponse(
+                query=query_request.query,
+                classification=triage_response.classification.category.value,
+                confidence=triage_response.classification.confidence,
+                severity=safety_result.max_severity.name,
+                answer=safety_result.safe_response,
+                sources=sources,
+                disclaimer="This analysis is based on your uploaded Glooko data. Discuss trends with your healthcare team."
+            )
+
+        # Handle knowledge-based queries (theory, camaps, ypsomed, libre, hybrid)
         # Check safety
         safety_result = safety_auditor.audit_text(
             text=triage_response.synthesized_answer,
@@ -262,6 +301,11 @@ async def get_sources():
     return {
         "sources": [
             {
+                "name": "Your Glooko Data",
+                "type": "glooko_data",
+                "description": "Your personal diabetes data from Glooko exports"
+            },
+            {
                 "name": "Think Like a Pancreas",
                 "author": "Gary Scheiner",
                 "type": "theory",
@@ -281,6 +325,16 @@ async def get_sources():
                 "name": "FreeStyle Libre 3 Manual",
                 "type": "libre",
                 "description": "CGM sensor and glucose readings"
+            },
+            {
+                "name": "ADA Standards of Care 2026",
+                "type": "clinical_guidelines",
+                "description": "Evidence-based treatment targets, glycemic goals, and complication management"
+            },
+            {
+                "name": "Australian Diabetes Guidelines",
+                "type": "clinical_guidelines",
+                "description": "Technology recommendations for CGM, pumps, and hybrid closed-loop systems"
             }
         ]
     }
@@ -296,7 +350,8 @@ async def health():
         "agents": {
             "triage": triage_agent is not None,
             "safety": safety_auditor is not None,
-            "glooko": glooko_analyzer is not None
+            "glooko_query": glooko_query_agent is not None,
+            "glooko_analyzer": glooko_analyzer is not None
         }
     }
 
@@ -521,47 +576,63 @@ async def run_glooko_analysis_internal(file_path: str) -> JSONResponse:
 
     # Run analysis
     logger.info(f"Running analysis on: {file_path}")
-    result = glooko_analyzer.analyze(file_path)
+    result = glooko_analyzer.process_export(file_path)
 
-    # Generate research queries
+    # Generate research queries from the full result
     queries = generate_research_queries(result)
 
+    # Extract metrics from time_in_range data
+    tir_data = result.get("time_in_range", {})
+    analysis_period = result.get("analysis_period", {})
+    patterns_dict = result.get("patterns", {})
+    
+    # Convert patterns dict to list format for frontend
+    patterns_list = []
+    for pattern_type, pattern_data in patterns_dict.items():
+        if isinstance(pattern_data, dict) and pattern_data.get("detected"):
+            patterns_list.append({
+                "type": pattern_type,
+                "description": pattern_data.get("description", "Pattern detected"),
+                "confidence": round(pattern_data.get("confidence", 50), 2),
+                "affected_readings": pattern_data.get("affected_readings", 0),
+                "recommendation": pattern_data.get("recommendation", "Discuss with your healthcare team"),
+            })
+    
     # Build response
+    # Convert glucose values to configured unit
+    avg_glucose_mgdl = tir_data.get("average_glucose")
+    avg_glucose_configured = convert_to_configured_unit(avg_glucose_mgdl) if avg_glucose_mgdl else None
+    std_mgdl = tir_data.get("glucose_std")
+    std_configured = convert_to_configured_unit(std_mgdl) if std_mgdl else None
+    
     response_data = {
         "success": True,
         "analysis_date": datetime.now().isoformat(),
         "file_analyzed": file_name,
         "metrics": {
-            "total_glucose_readings": result.metrics.total_readings,
-            "date_range_days": result.metrics.date_range_days,
-            "average_glucose": round(result.metrics.average_glucose, 1) if result.metrics.average_glucose else None,
-            "std_deviation": round(result.metrics.std_deviation, 1) if result.metrics.std_deviation else None,
-            "coefficient_of_variation": round(result.metrics.coefficient_of_variation, 1) if result.metrics.coefficient_of_variation else None,
-            "time_in_range_percent": round(result.metrics.time_in_range_percent, 1) if result.metrics.time_in_range_percent else None,
-            "time_below_range_percent": round(result.metrics.time_below_range_percent, 1) if result.metrics.time_below_range_percent else None,
-            "time_above_range_percent": round(result.metrics.time_above_range_percent, 1) if result.metrics.time_above_range_percent else None,
-            "average_daily_carbs": round(result.metrics.average_daily_carbs, 1) if result.metrics.average_daily_carbs else None,
-            "average_daily_insulin": round(result.metrics.average_daily_insulin, 1) if result.metrics.average_daily_insulin else None,
+            "total_glucose_readings": tir_data.get("total_readings", 0),
+            "date_range_days": analysis_period.get("days", 0),
+            "average_glucose": avg_glucose_configured,
+            "glucose_unit": GLUCOSE_UNIT,
+            "std_deviation": std_configured,
+            "coefficient_of_variation": round(tir_data.get("coefficient_of_variation", 0), 1),
+            "time_in_range_percent": round(tir_data.get("time_in_range_70_180", 0), 1),
+            "time_below_range_percent": round(tir_data.get("time_below_70", 0), 1),
+            "time_above_range_percent": round(tir_data.get("time_above_180", 0), 1),
+            "average_daily_carbs": None,  # Not available in current structure
+            "average_daily_insulin": None,  # Not available in current structure
         },
-        "patterns": [
-            {
-                "type": p.pattern_type.value,
-                "description": p.description,
-                "confidence": round(p.confidence, 2),
-                "affected_readings": p.affected_readings,
-                "recommendation": p.recommendation,
-            }
-            for p in result.patterns
-        ],
+        "patterns": patterns_list,
         "research_queries": [
             {
-                "query": q["query"],
+                "query": q.get("question", q.get("query", "")),
                 "pattern_type": q["pattern_type"],
                 "priority": q["priority"],
             }
             for q in queries
         ],
-        "warnings": result.warnings,
+        "warnings": result.get("anomalies", []),
+        "recommendations": result.get("recommendations", []),
     }
 
     # Save analysis results
@@ -594,6 +665,172 @@ async def get_analysis_by_id(analysis_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to load analysis: {e}")
 
 
+# ============================================================================
+# Knowledge Base Management Endpoints
+# ============================================================================
+
+from agents.knowledge_fetcher import KnowledgeFetcher
+
+# Initialize knowledge fetcher
+knowledge_fetcher = KnowledgeFetcher()
+
+
+class DeviceSetupRequest(BaseModel):
+    """Request model for device setup."""
+    pump_id: str = Field(..., description="Pump device ID from registry")
+    cgm_id: str = Field(..., description="CGM device ID from registry")
+
+
+@app.get("/api/knowledge/registry")
+async def get_device_registry():
+    """Get the complete device registry for setup UI."""
+    try:
+        registry_path = Path(__file__).parent.parent / "config" / "device_registry.json"
+        with open(registry_path, 'r') as f:
+            registry = json.load(f)
+        
+        # Format for UI display
+        return {
+            "pumps": {
+                key: {
+                    "id": key,
+                    "name": info["name"],
+                    "manufacturer": info["manufacturer"]
+                }
+                for key, info in registry.get("insulin_pumps", {}).items()
+            },
+            "cgms": {
+                key: {
+                    "id": key,
+                    "name": info["name"],
+                    "manufacturer": info["manufacturer"]
+                }
+                for key, info in registry.get("cgm_devices", {}).items()
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error loading device registry: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load device registry")
+
+
+@app.post("/api/knowledge/setup")
+async def setup_knowledge_base(setup_request: DeviceSetupRequest):
+    """
+    Initial setup: Select devices and fetch all knowledge sources.
+    This is the primary onboarding endpoint.
+    """
+    try:
+        logger.info(f"Starting knowledge base setup: {setup_request.pump_id} + {setup_request.cgm_id}")
+        
+        # Run setup (this fetches all sources)
+        results = knowledge_fetcher.setup_user_devices(
+            pump_id=setup_request.pump_id,
+            cgm_id=setup_request.cgm_id
+        )
+        
+        # Count successes and failures
+        successes = sum(1 for r in results.values() if r.get('success'))
+        failures = sum(1 for r in results.values() if not r.get('success'))
+        
+        return {
+            "success": failures == 0,
+            "message": f"Knowledge base setup completed. {successes} sources fetched successfully.",
+            "results": results,
+            "profile": knowledge_fetcher.get_user_profile()
+        }
+        
+    except Exception as e:
+        logger.error(f"Knowledge base setup failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Setup failed: {str(e)}")
+
+
+@app.get("/api/knowledge/status")
+async def get_knowledge_status():
+    """Get status of all configured knowledge sources."""
+    try:
+        statuses = knowledge_fetcher.get_all_sources_status()
+        profile = knowledge_fetcher.get_user_profile()
+        
+        return {
+            "sources": statuses,
+            "profile": profile,
+            "last_check": profile.get("last_update_check"),
+            "auto_update_enabled": profile.get("auto_update_enabled", True)
+        }
+    except Exception as e:
+        logger.error(f"Error getting knowledge status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get knowledge status")
+
+
+@app.post("/api/knowledge/check-updates")
+async def check_for_updates():
+    """Manually trigger update check for all sources."""
+    try:
+        logger.info("Manual update check triggered")
+        updates = knowledge_fetcher.check_for_updates()
+        
+        # Count updates found
+        updates_available = sum(1 for r in updates.values() if r.get('update_available'))
+        
+        return {
+            "success": True,
+            "updates_found": updates_available,
+            "details": updates
+        }
+    except Exception as e:
+        logger.error(f"Update check failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Update check failed: {str(e)}")
+
+
+class DeviceUpdateRequest(BaseModel):
+    """Request model for changing devices."""
+    device_type: str = Field(..., description="'pump' or 'cgm'")
+    device_id: str = Field(..., description="New device ID from registry")
+
+
+@app.post("/api/knowledge/update-device")
+async def update_device(update_request: DeviceUpdateRequest):
+    """Change pump or CGM and fetch new manual."""
+    try:
+        result = knowledge_fetcher.update_device(
+            device_type=update_request.device_type,
+            device_id=update_request.device_id
+        )
+        
+        return {
+            "success": result.get('success', False),
+            "message": f"Device updated to {update_request.device_id}",
+            "result": result
+        }
+    except Exception as e:
+        logger.error(f"Device update failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Device update failed: {str(e)}")
+
+
+@app.get("/api/knowledge/notifications")
+async def get_notifications():
+    """Get recent update notifications."""
+    try:
+        notifications_file = Path(__file__).parent.parent / "data" / "notifications.json"
+        if not notifications_file.exists():
+            return {"notifications": []}
+        
+        with open(notifications_file, 'r') as f:
+            notifications = json.load(f)
+        
+        # Return only unread or recent (last 30 days)
+        cutoff = datetime.now() - timedelta(days=30)
+        recent = [
+            n for n in notifications
+            if not n.get('read') or datetime.fromisoformat(n['timestamp']) > cutoff
+        ]
+        
+        return {"notifications": recent}
+    except Exception as e:
+        logger.error(f"Error loading notifications: {e}")
+        return {"notifications": []}
+
+
 # Mount static files
 web_dir = Path(__file__).parent
 static_dir = web_dir / "static"
@@ -601,6 +838,15 @@ if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
+@app.get("/setup")
+async def setup_page():
+    """Serve the knowledge base setup page."""
+    setup_html = web_dir / "setup.html"
+    if setup_html.exists():
+        return FileResponse(setup_html)
+    raise HTTPException(status_code=404, detail="Setup page not found")
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

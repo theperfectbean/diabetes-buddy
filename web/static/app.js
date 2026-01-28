@@ -2,6 +2,8 @@
 
 class DiabetesBuddyChat {
     constructor() {
+        console.log('DiabetesBuddyChat constructor called');
+        
         this.chatMessages = document.getElementById('chatMessages');
         this.queryInput = document.getElementById('queryInput');
         this.sendBtn = document.getElementById('sendBtn');
@@ -25,6 +27,11 @@ class DiabetesBuddyChat {
         this.dashboardSection = document.getElementById('dashboardSection');
         this.historyList = document.getElementById('historyList');
 
+        console.log('Elements initialized:');
+        console.log('  uploadArea:', this.uploadArea);
+        console.log('  fileInput:', this.fileInput);
+        console.log('  uploadProgress:', this.uploadProgress);
+
         // Configure marked.js for markdown
         if (window.marked) {
             marked.use({ breaks: true, gfm: true, mangle: false, headerIds: false });
@@ -43,6 +50,8 @@ class DiabetesBuddyChat {
         this.loadTheme();
         this.loadConversationHistory();
         this.loadSources();
+        
+        console.log('DiabetesBuddyChat initialization complete');
     }
 
     // ============================================
@@ -334,10 +343,19 @@ class DiabetesBuddyChat {
 
         messageDiv.innerHTML = `
             <div class="welcome-content">
-                <p>Welcome to Diabetes Buddy! Ask me anything about diabetes management.</p>
+                <p>Welcome to Diabetes Buddy! Ask me anything about diabetes management or your Glooko data.</p>
                 <div class="suggested-questions">
                     <p class="suggestion-label">Try asking:</p>
                     <div class="suggestion-buttons">
+                        <button class="suggestion-btn" data-query="What was my average glucose last week?">
+                            📊 What was my average glucose last week?
+                        </button>
+                        <button class="suggestion-btn" data-query="What's my time in range for the past 2 weeks?">
+                            📊 What's my time in range?
+                        </button>
+                        <button class="suggestion-btn" data-query="When do I typically experience lows?">
+                            📊 When do I typically experience lows?
+                        </button>
                         <button class="suggestion-btn" data-query="How do I change my pump cartridge?">
                             How do I change my pump cartridge?
                         </button>
@@ -409,6 +427,14 @@ class DiabetesBuddyChat {
         const { cleaned, refList } = this.extractAndFormatReferences(data.answer, data.sources);
         const answerContainer = this.formatText(cleaned, refList);
 
+        // Add classification badge for glooko_data queries
+        if (data.classification === 'glooko_data') {
+            const badge = document.createElement('div');
+            badge.className = 'classification-badge glooko-data';
+            badge.innerHTML = '📊 Your Glooko Data';
+            answerContainer.insertBefore(badge, answerContainer.firstChild);
+        }
+
         // Add severity indicator with icon
         const severityDiv = document.createElement('div');
         severityDiv.className = `severity ${data.severity}`;
@@ -420,7 +446,7 @@ class DiabetesBuddyChat {
         messageDiv.appendChild(answerContainer);
 
         // Disclaimer (if needed)
-        if (data.severity !== 'INFO') {
+        if (data.severity !== 'INFO' || data.classification === 'glooko_data') {
             const disclaimer = document.createElement('div');
             disclaimer.className = 'disclaimer-warning';
             disclaimer.setAttribute('role', 'alert');
@@ -693,7 +719,9 @@ class DiabetesBuddyChat {
 
         // File upload - drag and drop
         if (this.uploadArea) {
-            this.uploadArea.addEventListener('click', () => this.fileInput?.click());
+            this.uploadArea.addEventListener('click', () => {
+                this.fileInput?.click();
+            });
             this.uploadArea.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 this.uploadArea.classList.add('dragover');
@@ -712,7 +740,9 @@ class DiabetesBuddyChat {
         // File input change
         if (this.fileInput) {
             this.fileInput.addEventListener('change', (e) => {
-                if (e.target.files.length > 0) this.uploadFile(e.target.files[0]);
+                if (e.target.files.length > 0) {
+                    this.uploadFile(e.target.files[0]);
+                }
             });
         }
 
@@ -752,6 +782,8 @@ class DiabetesBuddyChat {
     // ============================================
 
     async uploadFile(file) {
+        console.log('uploadFile called with:', file);
+        
         // Validate file type
         if (!file.name.toLowerCase().endsWith('.zip')) {
             alert('Please upload a ZIP file exported from Glooko');
@@ -764,6 +796,8 @@ class DiabetesBuddyChat {
             return;
         }
 
+        console.log('File validation passed, starting upload...');
+        
         // Show progress
         this.uploadProgress?.removeAttribute('hidden');
         this.uploadArea?.setAttribute('hidden', '');
@@ -773,6 +807,8 @@ class DiabetesBuddyChat {
         try {
             const formData = new FormData();
             formData.append('file', file);
+            
+            console.log('Uploading to /api/upload-glooko...');
 
             // Upload with progress simulation (fetch doesn't support progress)
             if (uploadStatus) uploadStatus.textContent = 'Uploading...';
@@ -783,6 +819,8 @@ class DiabetesBuddyChat {
                 body: formData
             });
 
+            console.log('Upload response status:', response.status);
+            
             if (progressFill) progressFill.style.width = '60%';
 
             if (!response.ok) {
@@ -791,10 +829,13 @@ class DiabetesBuddyChat {
             }
 
             const result = await response.json();
+            console.log('Upload result:', result);
+            
             if (progressFill) progressFill.style.width = '80%';
 
             // Run analysis
             if (uploadStatus) uploadStatus.textContent = 'Analyzing data...';
+            console.log('Running analysis on:', result.filename);
             await this.runAnalysis(result.filename);
 
             if (progressFill) progressFill.style.width = '100%';
@@ -930,10 +971,18 @@ class DiabetesBuddyChat {
         this.dashboardSection?.removeAttribute('hidden');
 
         const metrics = analysis.metrics || {};
+        const glucoseUnit = metrics.glucose_unit || 'mg/dL';
 
-        // Update metric values
-        this.updateElement('avgGlucose', metrics.average_glucose || '--');
-        this.updateElement('stdDev', metrics.std_deviation || '--');
+        // Update metric values with configured glucose unit
+        const avgGlucoseDisplay = metrics.average_glucose 
+            ? `${metrics.average_glucose} ${glucoseUnit}` 
+            : '--';
+        const stdDevDisplay = metrics.std_deviation 
+            ? `${metrics.std_deviation} ${glucoseUnit}` 
+            : '--';
+        
+        this.updateElement('avgGlucose', avgGlucoseDisplay);
+        this.updateElement('stdDev', stdDevDisplay);
         this.updateElement('cvValue', metrics.coefficient_of_variation || '--');
         this.updateElement('totalReadings', metrics.total_glucose_readings || '--');
         this.updateElement('tirValue', metrics.time_in_range_percent ? `${metrics.time_in_range_percent}%` : '--');
@@ -1112,9 +1161,159 @@ class DiabetesBuddyChat {
         section.removeAttribute('hidden');
         list.innerHTML = warnings.map(w => `<li>${w}</li>`).join('');
     }
+    
+    // ============================================
+    // Knowledge Base Status
+    // ============================================
+    
+    async loadKnowledgeBaseStatus() {
+        const kbStatus = document.getElementById('kbStatus');
+        if (!kbStatus) return;
+        
+        try {
+            const response = await fetch('/api/knowledge/status');
+            const data = await response.json();
+            
+            const sources = data.sources || [];
+            const profile = data.profile || {};
+            
+            // Check if setup is needed
+            if (sources.length === 0 || !profile.devices || (!profile.devices.pump && !profile.devices.cgm)) {
+                kbStatus.innerHTML = `
+                    <div class="kb-notification">
+                        <div class="kb-notification-title">⚙️ Setup Required</div>
+                        <div class="kb-notification-text">Configure your devices to enable the knowledge base</div>
+                    </div>
+                    <div class="kb-actions">
+                        <a href="/setup" class="kb-btn kb-btn-primary">Start Setup</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Count by status
+            const statusCounts = {
+                current: sources.filter(s => s.status === 'current').length,
+                stale: sources.filter(s => s.status === 'stale').length,
+                outdated: sources.filter(s => s.status === 'outdated').length,
+                error: sources.filter(s => s.status === 'error').length
+            };
+            
+            // Build HTML
+            let html = `
+                <div class="kb-summary">
+                    <div class="kb-summary-text">
+                        <div class="kb-summary-count">${sources.length}</div>
+                        <div class="kb-summary-label">Knowledge Sources</div>
+                    </div>
+                </div>
+            `;
+            
+            // Show last check time
+            if (data.last_check) {
+                const lastCheck = new Date(data.last_check);
+                const timeAgo = this.formatTimeAgo(lastCheck);
+                html += `<div class="kb-last-check">Last checked ${timeAgo}</div>`;
+            }
+            
+            // Show source list (compact)
+            sources.slice(0, 5).forEach(source => {
+                const statusClass = source.status || 'unknown';
+                const statusLabel = statusClass.charAt(0).toUpperCase() + statusClass.slice(1);
+                
+                html += `
+                    <div class="kb-source-item">
+                        <div class="kb-source-name" title="${source.name}">${source.name}</div>
+                        <div class="kb-source-status">
+                            <span class="kb-status-badge ${statusClass}">${statusLabel}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            if (sources.length > 5) {
+                html += `<div class="kb-last-check">+${sources.length - 5} more sources</div>`;
+            }
+            
+            // Check for notifications
+            const notifResponse = await fetch('/api/knowledge/notifications');
+            const notifData = await notifResponse.json();
+            const unreadNotifications = (notifData.notifications || []).filter(n => !n.read);
+            
+            if (unreadNotifications.length > 0) {
+                html += `
+                    <div class="kb-notification">
+                        <div class="kb-notification-title">🔔 ${unreadNotifications.length} Update${unreadNotifications.length > 1 ? 's' : ''} Available</div>
+                        <div class="kb-notification-text">${unreadNotifications[0].title}</div>
+                    </div>
+                `;
+            }
+            
+            // Actions
+            html += `
+                <div class="kb-actions">
+                    <button class="kb-btn kb-btn-secondary" onclick="diabuddyChat.checkKnowledgeUpdates()">Check Now</button>
+                </div>
+            `;
+            
+            kbStatus.innerHTML = html;
+            
+        } catch (error) {
+            console.error('Failed to load knowledge base status:', error);
+            kbStatus.innerHTML = `
+                <div class="kb-notification">
+                    <div class="kb-notification-title">⚠️ Status Unavailable</div>
+                    <div class="kb-notification-text">Could not load knowledge base status</div>
+                </div>
+            `;
+        }
+    }
+    
+    async checkKnowledgeUpdates() {
+        const kbStatus = document.getElementById('kbStatus');
+        if (!kbStatus) return;
+        
+        try {
+            // Show loading state
+            const currentHTML = kbStatus.innerHTML;
+            kbStatus.innerHTML = '<div class="kb-loading">Checking for updates...</div>';
+            
+            const response = await fetch('/api/knowledge/check-updates', {
+                method: 'POST'
+            });
+            const data = await response.json();
+            
+            if (data.updates_found > 0) {
+                alert(`Found ${data.updates_found} update(s)! Check the knowledge base for details.`);
+            } else {
+                alert('All sources are up to date!');
+            }
+            
+            // Reload status
+            await this.loadKnowledgeBaseStatus();
+            
+        } catch (error) {
+            console.error('Failed to check updates:', error);
+            alert('Failed to check for updates. Please try again.');
+            // Restore previous content
+            await this.loadKnowledgeBaseStatus();
+        }
+    }
+    
+    formatTimeAgo(date) {
+        const seconds = Math.floor((new Date() - date) / 1000);
+        
+        if (seconds < 60) return 'just now';
+        if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+        if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+        return date.toLocaleDateString();
+    }
 }
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     window.diabuddyChat = new DiabetesBuddyChat();
+    // Load knowledge base status
+    window.diabuddyChat.loadKnowledgeBaseStatus();
 });

@@ -334,6 +334,129 @@ curl http://localhost:8000/api/glooko-analysis/analysis_20250128_143022
 | Escape | Close modal |
 | Tab | Navigate focusable elements |
 
+## Glooko Data Queries
+
+### Overview
+
+After uploading your Glooko data, you can ask natural language questions about your diabetes metrics directly in the chat. The system automatically recognizes when you're asking about your personal data and routes your query to the GlookoQueryAgent for analysis.
+
+### Supported Query Types
+
+#### Temporal Queries
+Ask about specific time periods:
+- **"What was my average glucose last week?"**
+- **"What's my time in range for January 15-20?"**
+- **"How many lows did I have in December?"**
+- **"Show me my glucose trend this month"**
+
+The system understands:
+- Relative dates: "last week", "last month", "past 2 weeks"
+- Specific dates: "January 15-20", "this week", "today"
+- Date ranges with specific dates
+
+#### Metric Queries
+Ask for specific calculations:
+- **"What's my average glucose?"** → Calculates mean and includes std deviation
+- **"What's my time in range?"** → Shows TIR% with breakdown (above/below range)
+- **"How many hypoglycemic events last month?"** → Counts low glucose events
+- **"What's my coefficient of variation?"** → Glucose variability metric
+
+#### Pattern Queries
+Ask about recurring patterns:
+- **"When do I typically experience dawn phenomenon?"** → Identifies morning glucose patterns
+- **"What days had post-meal spikes?"** → Detects meals with high spikes
+- **"Do I have a pattern around exercise?"** → Correlation with activity
+- **"Which hours are my glucose most variable?"** → Time-of-day patterns
+
+#### Trend Queries
+Ask about changes over time:
+- **"How did my glucose trend this week?"** → Overall trend direction
+- **"Is my time in range improving?"** → Compare to previous period
+- **"What's my insulin sensitivity trend?"** → Long-term insulin response
+
+### Response Format
+
+Each Glooko data query response includes:
+
+1. **Classification Badge** 📊 - Shows "Your Glooko Data" to indicate data-driven response
+2. **Main Answer** - Natural language explanation with metrics
+3. **Context** - Date range, number of readings analyzed
+4. **Severity Level** - Color-coded indicator (INFO, WARNING, or BLOCKED)
+5. **Disclaimer** - Reminder to discuss with healthcare team
+6. **Source Attribution** - "Your Glooko Data" with analysis date range
+
+### Example Conversation
+
+**User:** "What was my average glucose last week?"
+
+**Response:**
+> 📊 Your Glooko Data  
+> ✓ INFO
+>
+> Your average glucose was 142 mg/dL (7.9 mmol/L). Your readings varied by ±35 mg/dL with 24.1% variability. This is based on 142 readings from Jan 21-27, 2026.
+>
+> **Sources:** Your Glooko Data (Jan 21-27, 2026)
+>
+> *Note: This analysis is based on your uploaded Glooko data. Discuss trends with your healthcare team.*
+
+### How Intent Recognition Works
+
+The Triage Agent classifies your query:
+- **Keywords trigger glooko_data classification:**
+  - "my glucose", "my blood sugar", "my readings"
+  - "my time in range", "my TIR", "my average"
+  - "last week", "January", "how many", "trend", "pattern"
+  - "when do I", "which days", "how does"
+
+- **Confidence scoring (0.7+)** required to route to GlookoQueryAgent
+- **Ambiguous queries** may ask for clarification
+
+### Data Completeness
+
+The system handles missing or incomplete data gracefully:
+- **No data for period:** "No readings found for Jan 1-5. Your data starts from Jan 10."
+- **Future dates:** "I can't query future dates. Your latest data is from Jan 27, 2026."
+- **Missing fields:** Only shows available metrics (e.g., if no insulin data, only glucose shown)
+
+### Limitations & Notes
+
+⚠️ **Important Considerations:**
+1. **Analysis is educational** - Always discuss findings with your healthcare team
+2. **Data freshness** - Queries use your most recent uploaded export
+3. **Glucose ranges** - Default range is 70-180 mg/dL (ADA standard)
+4. **Sample size** - Results with <20 readings for a period may have reduced accuracy
+5. **Pattern confidence** - Patterns with <60% confidence are flagged
+6. **No prescriptive advice** - Responses describe trends, not recommend specific actions
+
+### API Reference: Glooko Query
+
+When you ask a data question, the system:
+
+1. Routes through `/api/query` endpoint
+2. Classification returns: `"classification": "glooko_data"`
+3. GlookoQueryAgent processes the query
+4. Returns response with `sources[0].source == "Your Glooko Data"`
+
+Example response:
+```json
+{
+  "query": "What was my average glucose last week?",
+  "classification": "glooko_data",
+  "confidence": 0.95,
+  "severity": "INFO",
+  "answer": "Your average glucose was 142 mg/dL...",
+  "sources": [
+    {
+      "source": "Your Glooko Data",
+      "excerpt": "Analysis period: Jan 21-27, 2026",
+      "confidence": 1.0,
+      "full_excerpt": "Data points used: 142\n..."
+    }
+  ],
+  "disclaimer": "This analysis is based on your uploaded Glooko data..."
+}
+```
+
 ## Troubleshooting
 
 ### Port 8000 Already in Use

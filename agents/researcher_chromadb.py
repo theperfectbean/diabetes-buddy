@@ -46,6 +46,8 @@ class ChromaDBBackend:
         "camaps": "docs/manuals/algorithm/user_manual_fx_mmoll_commercial_ca.pdf",
         "ypsomed": "docs/manuals/hardware/YPU_eIFU_REF_700009424_UK-en_V01.pdf",
         "libre": "docs/manuals/hardware/ART41641-001_rev-A-web.pdf",
+        "ada_standards": "docs/theory/ADA-Standards-of-Care-2026.pdf",
+        "australian_guidelines": "docs/theory/Australian-Diabetes-Guidelines.pdf",
     }
 
     # Human-readable source names
@@ -54,6 +56,8 @@ class ChromaDBBackend:
         "camaps": "CamAPS FX User Manual",
         "ypsomed": "Ypsomed Pump Manual",
         "libre": "FreeStyle Libre 3 Manual",
+        "ada_standards": "ADA Standards of Care 2026",
+        "australian_guidelines": "Australian Diabetes Guidelines",
     }
 
     # Chunking parameters
@@ -377,7 +381,72 @@ Your answer:"""
         """Search FreeStyle Libre 3 manual."""
         chunks = self._search_collection("libre", query, top_k)
         return chunks
-    
+
+    def search_ada_standards(self, query: str, sections: List[str] = None, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search ADA Standards of Care 2026.
+
+        Args:
+            query: Search query
+            sections: Optional list of section numbers to focus on (e.g., ["6", "10", "11", "12"])
+                     - Section 6: Glycemic Goals and Hypoglycemia
+                     - Section 7: Diabetes Technology
+                     - Section 10: Cardiovascular Disease
+                     - Section 11: Chronic Kidney Disease
+                     - Section 12: Retinopathy, Neuropathy, and Foot Care
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects
+        """
+        # Enhance query with section context if specified
+        if sections:
+            section_context = f" (focusing on Sections {', '.join(sections)})"
+            enhanced_query = query + section_context
+        else:
+            enhanced_query = query
+
+        chunks = self._search_collection("ada_standards", enhanced_query, top_k)
+        return chunks
+
+    def search_australian_guidelines(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search Australian Diabetes Guidelines.
+
+        Particularly valuable for:
+        - Technology recommendations (Sections 3.1-3.3)
+        - Hybrid closed-loop system evidence
+        - CGM and pump therapy evidence
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects
+        """
+        chunks = self._search_collection("australian_guidelines", query, top_k)
+        return chunks
+
+    def search_clinical_guidelines(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search both ADA Standards and Australian Guidelines.
+
+        Args:
+            query: Search query
+            top_k: Number of results per source
+
+        Returns:
+            Combined list of SearchResult objects from both sources
+        """
+        ada_results = self._search_collection("ada_standards", query, top_k)
+        aus_results = self._search_collection("australian_guidelines", query, top_k)
+
+        # Combine and sort by confidence
+        combined = ada_results + aus_results
+        combined.sort(key=lambda x: x.confidence, reverse=True)
+        return combined[:top_k * 2]  # Return up to 2x top_k results
+
     def search_with_synthesis(self, source_key: str, query: str, top_k: int = 5) -> str:
         """
         Search and synthesize answer with Gemini.
@@ -445,7 +514,56 @@ class ResearcherAgent:
             return self.backend.search_libre(query)
         else:
             return self.backend.search_libre(query)
-    
+
+    def search_ada_standards(self, query: str, sections: List[str] = None) -> List[SearchResult]:
+        """
+        Search ADA Standards of Care 2026 for evidence-based recommendations.
+
+        Args:
+            query: Search query
+            sections: Optional list of section numbers to focus on
+
+        Returns:
+            List of SearchResult objects
+        """
+        if self.use_chromadb:
+            return self.backend.search_ada_standards(query, sections)
+        else:
+            # Legacy fallback - no section filtering
+            return []
+
+    def search_australian_guidelines(self, query: str) -> List[SearchResult]:
+        """
+        Search Australian Diabetes Guidelines for technology recommendations.
+
+        Particularly valuable for Sections 3.1-3.3 on diabetes technology.
+
+        Args:
+            query: Search query
+
+        Returns:
+            List of SearchResult objects
+        """
+        if self.use_chromadb:
+            return self.backend.search_australian_guidelines(query)
+        else:
+            return []
+
+    def search_clinical_guidelines(self, query: str) -> List[SearchResult]:
+        """
+        Search both clinical guideline sources combined.
+
+        Args:
+            query: Search query
+
+        Returns:
+            Combined list of SearchResult objects
+        """
+        if self.use_chromadb:
+            return self.backend.search_clinical_guidelines(query)
+        else:
+            return []
+
     def search_multiple(self, query: str, sources: list[str]) -> dict[str, List[SearchResult]]:
         """
         Search multiple sources in parallel.
@@ -465,6 +583,9 @@ class ResearcherAgent:
             "camaps": self.search_camaps,
             "ypsomed": self.search_ypsomed,
             "libre": self.search_libre,
+            "clinical_guidelines": self.search_clinical_guidelines,
+            "ada_standards": self.search_ada_standards,
+            "australian_guidelines": self.search_australian_guidelines,
         }
         
         with ThreadPoolExecutor(max_workers=4) as executor:

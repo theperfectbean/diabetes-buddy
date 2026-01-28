@@ -23,19 +23,22 @@ import pandas as pd
 from scipy import stats
 
 from .safety import SafetyAuditor, AuditResult
+from .glucose_units import (
+    GLUCOSE_UNIT, THRESHOLDS, MMOL_TO_MGDL,
+    convert_to_configured_unit, validate_glucose_range
+)
 
 logger = logging.getLogger(__name__)
 
 # Constants
 CACHE_DIR = Path("data/cache")
-TARGET_LOW = 70  # mg/dL
-TARGET_HIGH = 180  # mg/dL
-HYPO_THRESHOLD = 70  # mg/dL
-HYPER_THRESHOLD = 180  # mg/dL
-SEVERE_HYPER_THRESHOLD = 250  # mg/dL
 
-# Unit conversion
-MMOL_TO_MGDL = 18.0182  # Conversion factor from mmol/L to mg/dL
+# Use configured thresholds (in mg/dL for internal calculations)
+TARGET_LOW = THRESHOLDS["target_low"] if GLUCOSE_UNIT == "mg/dL" else THRESHOLDS["target_low"] * MMOL_TO_MGDL
+TARGET_HIGH = THRESHOLDS["target_high"] if GLUCOSE_UNIT == "mg/dL" else THRESHOLDS["target_high"] * MMOL_TO_MGDL
+HYPO_THRESHOLD = THRESHOLDS["hypo_threshold"] if GLUCOSE_UNIT == "mg/dL" else THRESHOLDS["hypo_threshold"] * MMOL_TO_MGDL
+HYPER_THRESHOLD = THRESHOLDS["hyper_threshold"] if GLUCOSE_UNIT == "mg/dL" else THRESHOLDS["hyper_threshold"] * MMOL_TO_MGDL
+SEVERE_HYPER_THRESHOLD = THRESHOLDS["severe_hyper_threshold"] if GLUCOSE_UNIT == "mg/dL" else THRESHOLDS["severe_hyper_threshold"] * MMOL_TO_MGDL
 
 # Dawn phenomenon analysis window (3am-8am)
 DAWN_START_HOUR = 3
@@ -337,16 +340,16 @@ class GlookoParser:
                             continue
 
             if glucose is not None:
-                # Convert mmol/L to mg/dL if needed
+                # Convert mmol/L to mg/dL if needed (always store as mg/dL internally)
                 if is_mmol:
                     glucose = glucose * MMOL_TO_MGDL
 
                 # Validate glucose value (now in mg/dL)
-                if glucose < 20 or glucose > 600:
+                if not validate_glucose_range(glucose):
                     self._anomalies.append(DataAnomaly(
                         timestamp=ts,
                         anomaly_type="invalid_glucose",
-                        description=f"Glucose value out of range: {glucose:.1f} mg/dL",
+                        description=f"Glucose value out of range: {convert_to_configured_unit(glucose)} {GLUCOSE_UNIT}",
                         severity="warning",
                         value=glucose
                     ))

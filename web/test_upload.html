@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Test</title>
+    <style>
+        .upload-area {
+            border: 2px dashed #ccc;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            margin: 20px;
+        }
+        .upload-area:hover {
+            background: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <h1>File Upload Test</h1>
+    
+    <div class="upload-area" id="uploadArea">
+        <p>Click here or drag & drop a ZIP file</p>
+        <input type="file" id="fileInput" accept=".zip" hidden>
+    </div>
+    
+    <div id="output"></div>
+    
+    <script>
+        console.log('Script loading...');
+        
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const output = document.getElementById('output');
+        
+        console.log('uploadArea:', uploadArea);
+        console.log('fileInput:', fileInput);
+        
+        if (uploadArea) {
+            uploadArea.addEventListener('click', () => {
+                console.log('Upload area clicked');
+                output.innerHTML += '<p>Upload area clicked</p>';
+                fileInput.click();
+            });
+        }
+        
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                console.log('File selected:', e.target.files);
+                if (e.target.files.length > 0) {
+                    const file = e.target.files[0];
+                    output.innerHTML += `<p>File selected: ${file.name} (${file.size} bytes)</p>`;
+                    
+                    // Test upload
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    
+                    fetch('http://localhost:8000/api/upload-glooko', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Upload response:', data);
+                        output.innerHTML += `<p>Upload successful: ${JSON.stringify(data)}</p>`;
+                    })
+                    .catch(error => {
+                        console.error('Upload error:', error);
+                        output.innerHTML += `<p>Upload error: ${error}</p>`;
+                    });
+                }
+            });
+        }
+    </script>
+</body>
+</html>

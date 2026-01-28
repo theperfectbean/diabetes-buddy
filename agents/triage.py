@@ -36,6 +36,8 @@ class QueryCategory(Enum):
     CAMAPS = "camaps"      # CamAPS FX algorithm, Boost/Ease modes
     YPSOMED = "ypsomed"    # Pump hardware, cartridge changes
     LIBRE = "libre"        # CGM sensor, readings, alarms
+    GLOOKO_DATA = "glooko_data"  # Personal Glooko diabetes data queries
+    CLINICAL_GUIDELINES = "clinical_guidelines"  # Evidence-based clinical recommendations
     HYBRID = "hybrid"      # Spans multiple domains
 
 
@@ -72,6 +74,8 @@ class TriageAgent:
         "camaps": "CamAPS FX hybrid closed-loop algorithm, Boost mode, Ease-off mode, auto-mode behavior, target glucose settings, algorithm adjustments",
         "ypsomed": "Ypsomed/mylife pump hardware, cartridge changes, infusion sets, button operations, battery, priming, physical pump troubleshooting",
         "libre": "FreeStyle Libre 3 CGM sensor, sensor application, glucose readings, alarms, scanning, sensor errors, warm-up period",
+        "glooko_data": "Personal diabetes data queries about user's own glucose readings, time in range, averages, patterns, trends from uploaded Glooko export files. Keywords: my glucose, my blood sugar, my time in range, my readings, last week, how many times, average, trend, pattern, dawn phenomenon, post-meal spike",
+        "clinical_guidelines": "Evidence-based clinical recommendations and standards. Keywords: 'what does evidence say about', 'clinical recommendations for', 'what do guidelines recommend', 'is there evidence for'. Technology choice questions (pump vs MDI, CGM benefits) → Australian Guidelines Section 3. Treatment targets and goals → ADA Standards Section 6. Cardiovascular/kidney/complication management → ADA Standards Sections 10-12",
         "hybrid": "Questions spanning multiple domains that need information from more than one source",
     }
 
@@ -105,19 +109,23 @@ Categories:
 - camaps: {self.CATEGORY_DESCRIPTIONS['camaps']}
 - ypsomed: {self.CATEGORY_DESCRIPTIONS['ypsomed']}
 - libre: {self.CATEGORY_DESCRIPTIONS['libre']}
+- glooko_data: {self.CATEGORY_DESCRIPTIONS['glooko_data']}
+- clinical_guidelines: {self.CATEGORY_DESCRIPTIONS['clinical_guidelines']}
 - hybrid: {self.CATEGORY_DESCRIPTIONS['hybrid']}
 
 Query: "{query}"
 
 Respond in JSON format:
 {{
-  "category": "theory|camaps|ypsomed|libre|hybrid",
+  "category": "theory|camaps|ypsomed|libre|glooko_data|clinical_guidelines|hybrid",
   "confidence": 0.0-1.0,
   "reasoning": "Brief explanation of why this category was chosen",
   "secondary_categories": ["other", "relevant", "categories"]
 }}
 
 Rules:
+- Choose "glooko_data" if the query is about the USER'S OWN data/readings (my glucose, my readings, last week, my time in range)
+- Choose "clinical_guidelines" if asking about evidence, clinical recommendations, treatment targets, or what guidelines say
 - Choose "hybrid" only if the query clearly needs information from 2+ distinct sources
 - Be confident (0.8+) when keywords strongly match a category
 - List secondary_categories only if they might have supplementary info"""
@@ -167,20 +175,27 @@ Rules:
         Returns:
             Dictionary mapping category names to search results
         """
+        # Skip searching for glooko_data - will be handled separately
+        if QueryCategory.GLOOKO_DATA in categories:
+            categories = [c for c in categories if c != QueryCategory.GLOOKO_DATA]
+            if not categories:
+                return {}
+        
         # Build list of source keys to search
         sources_to_search = []
-        
+
         category_to_source = {
             QueryCategory.THEORY: "theory",
             QueryCategory.CAMAPS: "camaps",
             QueryCategory.YPSOMED: "ypsomed",
             QueryCategory.LIBRE: "libre",
+            QueryCategory.CLINICAL_GUIDELINES: "clinical_guidelines",
         }
-        
+
         for category in categories:
             if category == QueryCategory.HYBRID:
                 # Search all sources for hybrid queries
-                sources_to_search.extend(["theory", "camaps", "ypsomed", "libre"])
+                sources_to_search.extend(["theory", "camaps", "ypsomed", "libre", "clinical_guidelines"])
             elif category in category_to_source:
                 sources_to_search.append(category_to_source[category])
         
@@ -210,6 +225,10 @@ Rules:
         Returns:
             Synthesized answer string
         """
+        # For glooko_data queries, return empty string (will be handled by GlookoQueryAgent)
+        if classification.category == QueryCategory.GLOOKO_DATA:
+            return ""
+        
         # Collect all high-confidence results
         all_chunks = []
         for source, source_results in results.items():

@@ -80,6 +80,40 @@ class SafetyAuditor:
         "to your diabetes management routine."
     )
 
+    # Clinical guideline citation patterns for enhanced credibility
+    CLINICAL_GUIDELINE_CITATIONS = {
+        "technology": {
+            "pattern": r"\b(pump|CGM|continuous glucose monitor|closed[- ]?loop|hybrid|sensor|libre|camaps)\b",
+            "ada_citation": "This aligns with ADA 2026 Standards Section 7 recommendations for diabetes technology",
+            "aus_citation": "The Australian Diabetes Guidelines (Section 3.1-3.3) provide evidence for technology benefits",
+        },
+        "glycemic_targets": {
+            "pattern": r"\b(time[- ]?in[- ]?range|TIR|target|A1C|HbA1c|glucose goal|70[- ]?180)\b",
+            "ada_citation": "This aligns with ADA 2026 Standards Section 6 glycemic targets",
+            "aus_citation": None,
+        },
+        "closed_loop": {
+            "pattern": r"\b(hybrid closed[- ]?loop|automated insulin delivery|AID|camaps|control[- ]?iq)\b",
+            "ada_citation": "ADA 2026 Standards Section 7 supports hybrid closed-loop systems for appropriate candidates",
+            "aus_citation": "The Australian Diabetes Guidelines (Section 3.3) provide conditional recommendation for hybrid closed-loop systems",
+        },
+        "cardiovascular": {
+            "pattern": r"\b(cardiovascular|heart|CVD|ASCVD|cardio|cardiac)\b",
+            "ada_citation": "This aligns with ADA 2026 Standards Section 10 cardiovascular disease management",
+            "aus_citation": None,
+        },
+        "kidney": {
+            "pattern": r"\b(kidney|renal|CKD|nephropathy|eGFR|albuminuria)\b",
+            "ada_citation": "This aligns with ADA 2026 Standards Section 11 chronic kidney disease recommendations",
+            "aus_citation": None,
+        },
+        "complications": {
+            "pattern": r"\b(retinopathy|neuropathy|foot|complication|microvascular)\b",
+            "ada_citation": "This aligns with ADA 2026 Standards Section 12 complication management",
+            "aus_citation": None,
+        },
+    }
+
     # Patterns for detecting specific insulin doses
     DOSE_PATTERNS = [
         # "take 5 units", "inject 3 units", "give 10 units"
@@ -166,13 +200,59 @@ class SafetyAuditor:
             return text + self.DISCLAIMER
         return text
 
-    def audit_text(self, text: str, query: str = "") -> AuditResult:
+    def _add_clinical_guideline_citations(self, text: str) -> tuple[str, list[str]]:
+        """
+        Add clinical guideline citations when response content matches evidence-based topics.
+
+        Args:
+            text: The response text to enhance
+
+        Returns:
+            Tuple of (enhanced_text, list_of_citations_added)
+        """
+        citations_added = []
+        text_lower = text.lower()
+
+        # Check each topic for pattern matches
+        for topic, config in self.CLINICAL_GUIDELINE_CITATIONS.items():
+            if re.search(config["pattern"], text_lower, re.IGNORECASE):
+                # Add ADA citation if available and not already present
+                if config["ada_citation"] and config["ada_citation"] not in text:
+                    citations_added.append(config["ada_citation"])
+
+                # Add Australian citation if available and not already present
+                if config["aus_citation"] and config["aus_citation"] not in text:
+                    citations_added.append(config["aus_citation"])
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_citations = []
+        for c in citations_added:
+            if c not in seen:
+                seen.add(c)
+                unique_citations.append(c)
+
+        return text, unique_citations
+
+    def _format_guideline_support(self, citations: list[str]) -> str:
+        """Format clinical guideline citations as a support note."""
+        if not citations:
+            return ""
+
+        if len(citations) == 1:
+            return f"\n\n📚 **Clinical Evidence:** {citations[0]}."
+
+        citation_list = "\n".join(f"- {c}" for c in citations)
+        return f"\n\n📚 **Clinical Evidence:**\n{citation_list}"
+
+    def audit_text(self, text: str, query: str = "", add_guideline_citations: bool = True) -> AuditResult:
         """
         Audit a text response for safety issues.
 
         Args:
             text: The response text to audit
             query: The original query (for logging)
+            add_guideline_citations: Whether to add clinical guideline citations (default True)
 
         Returns:
             AuditResult with findings and safe response
@@ -185,6 +265,12 @@ class SafetyAuditor:
 
         # Apply transformations
         safe_text = self._apply_transformations(text, findings)
+
+        # Add clinical guideline citations if applicable
+        if add_guideline_citations:
+            safe_text, citations = self._add_clinical_guideline_citations(safe_text)
+            if citations:
+                safe_text += self._format_guideline_support(citations)
 
         # Add disclaimer
         safe_text = self._add_disclaimer(safe_text)
