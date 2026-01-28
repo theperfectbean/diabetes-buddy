@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Diabetes Buddy - Chat Interface</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
@@ -15,6 +16,15 @@
                 <p class="subtitle">AI-powered diabetes management assistant</p>
             </div>
             <div class="header-actions">
+                <!-- Tab Navigation -->
+                <nav class="tab-nav" role="tablist">
+                    <button id="chatTab" class="tab-btn active" role="tab" aria-selected="true" aria-controls="chatPanel">
+                        Chat
+                    </button>
+                    <button id="dataTab" class="tab-btn" role="tab" aria-selected="false" aria-controls="dataPanel">
+                        Data Analysis
+                    </button>
+                </nav>
                 <button id="exportBtn" class="header-btn" aria-label="Export conversation" title="Export chat">
                     Export
                 </button>
@@ -24,33 +34,153 @@
             </div>
         </header>
 
-        <!-- Chat Container -->
-        <main class="chat-container" role="main" aria-label="Chat conversation">
-            <!-- Chat History -->
-            <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-label="Chat messages">
-                <!-- Messages are loaded dynamically by JavaScript -->
+        <!-- Main Content Area -->
+        <main class="main-content" role="main">
+            <!-- Chat Panel -->
+            <div id="chatPanel" class="panel active" role="tabpanel" aria-labelledby="chatTab">
+                <div class="chat-container">
+                    <!-- Chat History -->
+                    <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-label="Chat messages">
+                        <!-- Messages are loaded dynamically by JavaScript -->
+                    </div>
+
+                    <!-- Input Area -->
+                    <div class="input-area" role="form" aria-label="Send a message">
+                        <div class="input-wrapper">
+                            <label for="queryInput" class="visually-hidden">Your question</label>
+                            <input
+                                type="text"
+                                id="queryInput"
+                                class="query-input"
+                                placeholder="Ask a question... e.g., 'How do I change my pump cartridge?'"
+                                autocomplete="off"
+                                aria-describedby="inputHelp"
+                                maxlength="2000"
+                            >
+                            <button id="sendBtn" class="send-btn" aria-label="Send message">
+                                <span>Send</span>
+                                <span class="icon" aria-hidden="true">&#8594;</span>
+                            </button>
+                        </div>
+                        <div id="inputHelp" class="info-text">
+                            Press Enter to send or click the Send button
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Input Area -->
-            <div class="input-area" role="form" aria-label="Send a message">
-                <div class="input-wrapper">
-                    <label for="queryInput" class="visually-hidden">Your question</label>
-                    <input
-                        type="text"
-                        id="queryInput"
-                        class="query-input"
-                        placeholder="Ask a question... e.g., 'How do I change my pump cartridge?'"
-                        autocomplete="off"
-                        aria-describedby="inputHelp"
-                        maxlength="2000"
-                    >
-                    <button id="sendBtn" class="send-btn" aria-label="Send message">
-                        <span>Send</span>
-                        <span class="icon" aria-hidden="true">&#8594;</span>
-                    </button>
-                </div>
-                <div id="inputHelp" class="info-text">
-                    Press Enter to send or click the Send button
+            <!-- Data Analysis Panel -->
+            <div id="dataPanel" class="panel" role="tabpanel" aria-labelledby="dataTab" hidden>
+                <div class="data-analysis-container">
+                    <!-- Upload Section -->
+                    <section class="upload-section">
+                        <h2>Upload Glooko Export</h2>
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-icon">&#128194;</div>
+                            <p>Drag & drop your Glooko export ZIP file here</p>
+                            <p class="upload-hint">or click to select a file (max 50MB)</p>
+                            <input type="file" id="fileInput" accept=".zip" hidden>
+                        </div>
+                        <div id="uploadProgress" class="upload-progress" hidden>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill"></div>
+                            </div>
+                            <p id="uploadStatus">Uploading...</p>
+                        </div>
+                    </section>
+
+                    <!-- Dashboard Section -->
+                    <section class="dashboard-section" id="dashboardSection" hidden>
+                        <h2>Analysis Dashboard</h2>
+
+                        <!-- Time in Range Gauge -->
+                        <div class="metrics-row">
+                            <div class="metric-card gauge-card">
+                                <h3>Time in Range</h3>
+                                <div class="gauge-container">
+                                    <canvas id="tirGauge" width="200" height="120"></canvas>
+                                    <div class="gauge-value" id="tirValue">--</div>
+                                    <div class="gauge-label">Target: 70-180 mg/dL</div>
+                                </div>
+                            </div>
+
+                            <div class="metric-card">
+                                <h3>Key Metrics</h3>
+                                <div class="metrics-grid">
+                                    <div class="metric">
+                                        <span class="metric-label">Average Glucose</span>
+                                        <span class="metric-value" id="avgGlucose">--</span>
+                                        <span class="metric-unit">mg/dL</span>
+                                    </div>
+                                    <div class="metric">
+                                        <span class="metric-label">Std Deviation</span>
+                                        <span class="metric-value" id="stdDev">--</span>
+                                        <span class="metric-unit">mg/dL</span>
+                                    </div>
+                                    <div class="metric">
+                                        <span class="metric-label">CV</span>
+                                        <span class="metric-value" id="cvValue">--</span>
+                                        <span class="metric-unit">%</span>
+                                    </div>
+                                    <div class="metric">
+                                        <span class="metric-label">Readings</span>
+                                        <span class="metric-value" id="totalReadings">--</span>
+                                        <span class="metric-unit">total</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Time Distribution Bar -->
+                        <div class="metric-card time-distribution-card">
+                            <h3>Glucose Distribution</h3>
+                            <div class="time-bars">
+                                <div class="time-bar below" id="belowBar">
+                                    <span class="bar-label">Below</span>
+                                    <span class="bar-value" id="belowValue">--</span>
+                                </div>
+                                <div class="time-bar in-range" id="inRangeBar">
+                                    <span class="bar-label">In Range</span>
+                                    <span class="bar-value" id="inRangeValue">--</span>
+                                </div>
+                                <div class="time-bar above" id="aboveBar">
+                                    <span class="bar-label">Above</span>
+                                    <span class="bar-value" id="aboveValue">--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Patterns Section -->
+                        <div class="metric-card patterns-card">
+                            <h3>Detected Patterns</h3>
+                            <div class="patterns-list" id="patternsList">
+                                <p class="no-patterns">No patterns detected yet</p>
+                            </div>
+                        </div>
+
+                        <!-- Research Questions Section -->
+                        <div class="metric-card questions-card">
+                            <h3>Suggested Questions</h3>
+                            <p class="questions-hint">Click a question to ask Diabetes Buddy</p>
+                            <div class="questions-list" id="questionsList">
+                                <p class="no-questions">Run analysis to see suggested questions</p>
+                            </div>
+                        </div>
+
+                        <!-- Warnings Section -->
+                        <div class="warnings-section" id="warningsSection" hidden>
+                            <h3>Warnings</h3>
+                            <ul id="warningsList"></ul>
+                        </div>
+                    </section>
+
+                    <!-- Analysis History -->
+                    <section class="history-section">
+                        <h2>Analysis History</h2>
+                        <div class="history-list" id="historyList">
+                            <p class="loading">Loading history...</p>
+                        </div>
+                    </section>
                 </div>
             </div>
         </main>

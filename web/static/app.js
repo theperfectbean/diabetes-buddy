@@ -12,6 +12,19 @@ class DiabetesBuddyChat {
         this.exportBtn = document.getElementById('exportBtn');
         this.themeToggle = document.getElementById('themeToggle');
 
+        // Tab navigation
+        this.chatTab = document.getElementById('chatTab');
+        this.dataTab = document.getElementById('dataTab');
+        this.chatPanel = document.getElementById('chatPanel');
+        this.dataPanel = document.getElementById('dataPanel');
+
+        // Data analysis elements
+        this.uploadArea = document.getElementById('uploadArea');
+        this.fileInput = document.getElementById('fileInput');
+        this.uploadProgress = document.getElementById('uploadProgress');
+        this.dashboardSection = document.getElementById('dashboardSection');
+        this.historyList = document.getElementById('historyList');
+
         // Configure marked.js for markdown
         if (window.marked) {
             marked.use({ breaks: true, gfm: true, mangle: false, headerIds: false });
@@ -21,7 +34,12 @@ class DiabetesBuddyChat {
         this.conversationId = this.loadOrCreateConversation();
         this.messages = [];
 
+        // Analysis state
+        this.currentAnalysis = null;
+        this.tirChart = null;
+
         this.setupEventListeners();
+        this.setupDataAnalysisListeners();
         this.loadTheme();
         this.loadConversationHistory();
         this.loadSources();
@@ -659,9 +677,444 @@ class DiabetesBuddyChat {
     scrollToBottom() {
         this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
     }
+
+    // ============================================
+    // Tab Navigation
+    // ============================================
+
+    setupDataAnalysisListeners() {
+        // Tab switching
+        if (this.chatTab) {
+            this.chatTab.addEventListener('click', () => this.switchTab('chat'));
+        }
+        if (this.dataTab) {
+            this.dataTab.addEventListener('click', () => this.switchTab('data'));
+        }
+
+        // File upload - drag and drop
+        if (this.uploadArea) {
+            this.uploadArea.addEventListener('click', () => this.fileInput?.click());
+            this.uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                this.uploadArea.classList.add('dragover');
+            });
+            this.uploadArea.addEventListener('dragleave', () => {
+                this.uploadArea.classList.remove('dragover');
+            });
+            this.uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                this.uploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) this.uploadFile(files[0]);
+            });
+        }
+
+        // File input change
+        if (this.fileInput) {
+            this.fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) this.uploadFile(e.target.files[0]);
+            });
+        }
+
+        // Load history when data tab is shown
+        if (this.dataPanel) {
+            this.loadAnalysisHistory();
+        }
+    }
+
+    switchTab(tab) {
+        if (tab === 'chat') {
+            this.chatTab?.classList.add('active');
+            this.dataTab?.classList.remove('active');
+            this.chatTab?.setAttribute('aria-selected', 'true');
+            this.dataTab?.setAttribute('aria-selected', 'false');
+            this.chatPanel?.classList.add('active');
+            this.chatPanel?.removeAttribute('hidden');
+            this.dataPanel?.classList.remove('active');
+            this.dataPanel?.setAttribute('hidden', '');
+        } else {
+            this.dataTab?.classList.add('active');
+            this.chatTab?.classList.remove('active');
+            this.dataTab?.setAttribute('aria-selected', 'true');
+            this.chatTab?.setAttribute('aria-selected', 'false');
+            this.dataPanel?.classList.add('active');
+            this.dataPanel?.removeAttribute('hidden');
+            this.chatPanel?.classList.remove('active');
+            this.chatPanel?.setAttribute('hidden', '');
+            // Load latest analysis
+            this.loadLatestAnalysis();
+            this.loadAnalysisHistory();
+        }
+    }
+
+    // ============================================
+    // File Upload
+    // ============================================
+
+    async uploadFile(file) {
+        // Validate file type
+        if (!file.name.toLowerCase().endsWith('.zip')) {
+            alert('Please upload a ZIP file exported from Glooko');
+            return;
+        }
+
+        // Check size (50MB max)
+        if (file.size > 50 * 1024 * 1024) {
+            alert('File too large. Maximum size is 50MB');
+            return;
+        }
+
+        // Show progress
+        this.uploadProgress?.removeAttribute('hidden');
+        this.uploadArea?.setAttribute('hidden', '');
+        const progressFill = document.getElementById('progressFill');
+        const uploadStatus = document.getElementById('uploadStatus');
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // Upload with progress simulation (fetch doesn't support progress)
+            if (uploadStatus) uploadStatus.textContent = 'Uploading...';
+            if (progressFill) progressFill.style.width = '30%';
+
+            const response = await fetch('/api/upload-glooko', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (progressFill) progressFill.style.width = '60%';
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Upload failed');
+            }
+
+            const result = await response.json();
+            if (progressFill) progressFill.style.width = '80%';
+
+            // Run analysis
+            if (uploadStatus) uploadStatus.textContent = 'Analyzing data...';
+            await this.runAnalysis(result.filename);
+
+            if (progressFill) progressFill.style.width = '100%';
+            if (uploadStatus) uploadStatus.textContent = 'Complete!';
+
+            // Reset after delay
+            setTimeout(() => {
+                this.uploadProgress?.setAttribute('hidden', '');
+                this.uploadArea?.removeAttribute('hidden');
+                if (progressFill) progressFill.style.width = '0%';
+            }, 1500);
+
+        } catch (error) {
+            console.error('Upload error:', error);
+            if (uploadStatus) uploadStatus.textContent = `Error: ${error.message}`;
+            setTimeout(() => {
+                this.uploadProgress?.setAttribute('hidden', '');
+                this.uploadArea?.removeAttribute('hidden');
+            }, 3000);
+        }
+    }
+
+    // ============================================
+    // Analysis Loading
+    // ============================================
+
+    async runAnalysis(filename = null) {
+        try {
+            const url = filename
+                ? `/api/glooko-analysis/run?filename=${encodeURIComponent(filename)}`
+                : '/api/glooko-analysis/run';
+
+            const response = await fetch(url, { method: 'POST' });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Analysis failed');
+            }
+
+            const analysis = await response.json();
+            this.displayAnalysis(analysis);
+            this.loadAnalysisHistory();
+
+        } catch (error) {
+            console.error('Analysis error:', error);
+            alert(`Analysis failed: ${error.message}`);
+        }
+    }
+
+    async loadLatestAnalysis() {
+        try {
+            const response = await fetch('/api/glooko-analysis/latest');
+
+            if (response.status === 404) {
+                // No analysis available
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error('Failed to load analysis');
+            }
+
+            const analysis = await response.json();
+            this.displayAnalysis(analysis);
+
+        } catch (error) {
+            console.error('Failed to load latest analysis:', error);
+        }
+    }
+
+    async loadAnalysisHistory() {
+        if (!this.historyList) return;
+
+        try {
+            const response = await fetch('/api/glooko-analysis/history');
+            const data = await response.json();
+
+            if (data.history.length === 0) {
+                this.historyList.innerHTML = '<p class="no-history">No analysis history yet</p>';
+                return;
+            }
+
+            this.historyList.innerHTML = data.history.map(item => `
+                <div class="history-item ${item.status === 'not_analyzed' ? 'not-analyzed' : ''}"
+                     data-id="${item.id || ''}" data-file="${item.file}">
+                    <div class="history-info">
+                        <span class="history-file">${item.file}</span>
+                        <span class="history-date">${item.date ? new Date(item.date).toLocaleDateString() : 'Not analyzed'}</span>
+                    </div>
+                    ${item.time_in_range !== null ? `
+                        <div class="history-metrics">
+                            <span class="tir-badge ${this.getTIRClass(item.time_in_range)}">${item.time_in_range}% TIR</span>
+                            <span class="patterns-count">${item.patterns_found} patterns</span>
+                        </div>
+                    ` : `
+                        <button class="analyze-btn" onclick="window.diabuddyChat.runAnalysis('${item.file}')">Analyze</button>
+                    `}
+                </div>
+            `).join('');
+
+            // Add click handlers for history items with analysis
+            this.historyList.querySelectorAll('.history-item[data-id]').forEach(item => {
+                if (item.dataset.id) {
+                    item.addEventListener('click', () => this.loadAnalysisById(item.dataset.id));
+                    item.style.cursor = 'pointer';
+                }
+            });
+
+        } catch (error) {
+            console.error('Failed to load history:', error);
+            this.historyList.innerHTML = '<p class="error">Failed to load history</p>';
+        }
+    }
+
+    async loadAnalysisById(analysisId) {
+        try {
+            const response = await fetch(`/api/glooko-analysis/${analysisId}`);
+            if (!response.ok) throw new Error('Failed to load analysis');
+
+            const analysis = await response.json();
+            this.displayAnalysis(analysis);
+        } catch (error) {
+            console.error('Failed to load analysis:', error);
+        }
+    }
+
+    // ============================================
+    // Dashboard Display
+    // ============================================
+
+    displayAnalysis(analysis) {
+        this.currentAnalysis = analysis;
+        this.dashboardSection?.removeAttribute('hidden');
+
+        const metrics = analysis.metrics || {};
+
+        // Update metric values
+        this.updateElement('avgGlucose', metrics.average_glucose || '--');
+        this.updateElement('stdDev', metrics.std_deviation || '--');
+        this.updateElement('cvValue', metrics.coefficient_of_variation || '--');
+        this.updateElement('totalReadings', metrics.total_glucose_readings || '--');
+        this.updateElement('tirValue', metrics.time_in_range_percent ? `${metrics.time_in_range_percent}%` : '--');
+
+        // Update time distribution bars
+        this.updateTimeDistribution(
+            metrics.time_below_range_percent || 0,
+            metrics.time_in_range_percent || 0,
+            metrics.time_above_range_percent || 0
+        );
+
+        // Draw TIR gauge
+        this.drawTIRGauge(metrics.time_in_range_percent || 0);
+
+        // Display patterns
+        this.displayPatterns(analysis.patterns || []);
+
+        // Display research questions
+        this.displayResearchQuestions(analysis.research_queries || []);
+
+        // Display warnings
+        this.displayWarnings(analysis.warnings || []);
+    }
+
+    updateElement(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    }
+
+    updateTimeDistribution(below, inRange, above) {
+        const belowBar = document.getElementById('belowBar');
+        const inRangeBar = document.getElementById('inRangeBar');
+        const aboveBar = document.getElementById('aboveBar');
+
+        if (belowBar) {
+            belowBar.style.flex = below || 0.1;
+            document.getElementById('belowValue').textContent = `${below}%`;
+        }
+        if (inRangeBar) {
+            inRangeBar.style.flex = inRange || 0.1;
+            document.getElementById('inRangeValue').textContent = `${inRange}%`;
+        }
+        if (aboveBar) {
+            aboveBar.style.flex = above || 0.1;
+            document.getElementById('aboveValue').textContent = `${above}%`;
+        }
+    }
+
+    drawTIRGauge(value) {
+        const canvas = document.getElementById('tirGauge');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height - 10;
+        const radius = 80;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw background arc (grey)
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
+        ctx.lineWidth = 20;
+        ctx.strokeStyle = '#e0e0e0';
+        ctx.stroke();
+
+        // Draw value arc
+        const angle = Math.PI + (value / 100) * Math.PI;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, Math.PI, angle, false);
+        ctx.lineWidth = 20;
+
+        // Color based on value
+        if (value >= 70) {
+            ctx.strokeStyle = '#4caf50'; // Green
+        } else if (value >= 50) {
+            ctx.strokeStyle = '#ff9800'; // Orange
+        } else {
+            ctx.strokeStyle = '#f44336'; // Red
+        }
+        ctx.stroke();
+    }
+
+    getTIRClass(value) {
+        if (value >= 70) return 'tir-good';
+        if (value >= 50) return 'tir-warning';
+        return 'tir-danger';
+    }
+
+    displayPatterns(patterns) {
+        const container = document.getElementById('patternsList');
+        if (!container) return;
+
+        if (patterns.length === 0) {
+            container.innerHTML = '<p class="no-patterns">No significant patterns detected</p>';
+            return;
+        }
+
+        container.innerHTML = patterns.map(p => `
+            <div class="pattern-item ${this.getPatternClass(p.confidence)}">
+                <div class="pattern-header">
+                    <span class="pattern-type">${this.formatPatternType(p.type)}</span>
+                    <span class="pattern-confidence">${Math.round(p.confidence * 100)}% confidence</span>
+                </div>
+                <p class="pattern-description">${p.description}</p>
+                ${p.recommendation ? `<p class="pattern-recommendation">${p.recommendation}</p>` : ''}
+            </div>
+        `).join('');
+    }
+
+    formatPatternType(type) {
+        const types = {
+            'dawn_phenomenon': 'Dawn Phenomenon',
+            'post_meal_spike': 'Post-Meal Spike',
+            'nocturnal_hypo': 'Nocturnal Hypoglycemia',
+            'exercise_drop': 'Exercise-Related Drop',
+            'insulin_stacking': 'Insulin Stacking',
+            'rebound_high': 'Rebound High',
+            'consistent_high': 'Consistent Highs',
+            'consistent_low': 'Consistent Lows',
+            'high_variability': 'High Variability'
+        };
+        return types[type] || type.replace(/_/g, ' ');
+    }
+
+    getPatternClass(confidence) {
+        if (confidence >= 0.7) return 'pattern-high';
+        if (confidence >= 0.4) return 'pattern-medium';
+        return 'pattern-low';
+    }
+
+    displayResearchQuestions(queries) {
+        const container = document.getElementById('questionsList');
+        if (!container) return;
+
+        if (queries.length === 0) {
+            container.innerHTML = '<p class="no-questions">No research questions available</p>';
+            return;
+        }
+
+        container.innerHTML = queries.slice(0, 5).map(q => `
+            <button class="question-btn" data-query="${this.escapeHtml(q.query)}">
+                <span class="question-priority priority-${q.priority}">${q.priority}</span>
+                <span class="question-text">${q.query}</span>
+            </button>
+        `).join('');
+
+        // Add click handlers to ask questions
+        container.querySelectorAll('.question-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const query = btn.dataset.query;
+                this.switchTab('chat');
+                this.queryInput.value = query;
+                this.queryInput.focus();
+            });
+        });
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    displayWarnings(warnings) {
+        const section = document.getElementById('warningsSection');
+        const list = document.getElementById('warningsList');
+        if (!section || !list) return;
+
+        if (warnings.length === 0) {
+            section.setAttribute('hidden', '');
+            return;
+        }
+
+        section.removeAttribute('hidden');
+        list.innerHTML = warnings.map(w => `<li>${w}</li>`).join('');
+    }
 }
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
-    new DiabetesBuddyChat();
+    window.diabuddyChat = new DiabetesBuddyChat();
 });

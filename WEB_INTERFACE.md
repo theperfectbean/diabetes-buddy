@@ -25,6 +25,22 @@ Open your browser and go to: **http://localhost:8000**
 - **Source Citations** - Know exactly where information comes from
 - **Responsive Design** - Works on desktop, tablet, and mobile
 
+### New Features (v1.2) - Data Analysis
+
+#### Data Analysis Tab
+- **Upload Glooko Exports**: Drag & drop or click to upload ZIP files
+- **Time in Range Gauge**: Visual semicircle gauge showing TIR percentage
+- **Key Metrics Dashboard**: Average glucose, std deviation, CV%, total readings
+- **Glucose Distribution Bar**: Color-coded below/in-range/above breakdown
+- **Pattern Detection**: Dawn phenomenon, post-meal spikes, nocturnal hypos
+- **Research Questions**: Click to send pattern-based questions to chat
+- **Analysis History**: Browse and reload previous analyses
+
+#### Tab Navigation
+- Click "Chat" or "Data Analysis" tabs in the header
+- Tabs persist state when switching between views
+- Questions from data analysis automatically switch to chat
+
 ### New Features (v1.1)
 
 #### Dark Mode
@@ -125,9 +141,126 @@ curl http://localhost:8000/api/health
   "version": "1.0.0",
   "agents": {
     "triage": true,
-    "safety": true
+    "safety": true,
+    "glooko": true
   }
 }
+```
+
+### Glooko Data Analysis Endpoints
+
+#### POST /api/upload-glooko
+Upload a Glooko export ZIP file for analysis
+
+```bash
+curl -X POST http://localhost:8000/api/upload-glooko \
+  -F "file=@glooko_export.zip"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "File uploaded successfully",
+  "filename": "glooko_export_20250128_143022.zip",
+  "file_path": "/home/gary/diabetes-buddy/data/glooko/glooko_export_20250128_143022.zip",
+  "records_found": {
+    "glucose_readings": 19381,
+    "insulin_records": 85,
+    "carb_entries": 100,
+    "activity_logs": 0,
+    "notes": 0
+  }
+}
+```
+
+**Limits:**
+- Maximum file size: 50MB
+- Only ZIP files accepted
+- Must contain CSV files from Glooko export
+
+#### GET /api/glooko-analysis/latest
+Get the most recent analysis results
+
+```bash
+curl http://localhost:8000/api/glooko-analysis/latest
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "analysis_date": "2025-01-28T14:30:22.123456",
+  "file_analyzed": "glooko_export_20250128_143022.zip",
+  "metrics": {
+    "total_glucose_readings": 19381,
+    "date_range_days": 90,
+    "average_glucose": 142.5,
+    "std_deviation": 45.2,
+    "coefficient_of_variation": 31.8,
+    "time_in_range_percent": 68.4,
+    "time_below_range_percent": 3.2,
+    "time_above_range_percent": 28.4
+  },
+  "patterns": [
+    {
+      "type": "dawn_phenomenon",
+      "description": "Elevated glucose 3am-8am",
+      "confidence": 0.72,
+      "affected_readings": 1245,
+      "recommendation": "Consider adjusting overnight basal rate"
+    }
+  ],
+  "research_queries": [
+    {
+      "query": "What causes dawn phenomenon and how can CamAPS FX handle it?",
+      "pattern_type": "dawn_phenomenon",
+      "priority": "high"
+    }
+  ],
+  "warnings": []
+}
+```
+
+#### GET /api/glooko-analysis/history
+List all available analyses
+
+```bash
+curl http://localhost:8000/api/glooko-analysis/history
+```
+
+**Response:**
+```json
+{
+  "history": [
+    {
+      "id": "analysis_20250128_143022",
+      "date": "2025-01-28T14:30:22.123456",
+      "file": "glooko_export_20250128_143022.zip",
+      "time_in_range": 68.4,
+      "patterns_found": 3
+    }
+  ],
+  "total": 1
+}
+```
+
+#### POST /api/glooko-analysis/run
+Run analysis on a specific file or most recent upload
+
+```bash
+# Analyze most recent file
+curl -X POST http://localhost:8000/api/glooko-analysis/run
+
+# Analyze specific file
+curl -X POST "http://localhost:8000/api/glooko-analysis/run?filename=glooko_export_20250128_143022.zip"
+```
+
+#### GET /api/glooko-analysis/{analysis_id}
+Get a specific analysis by ID
+
+```bash
+curl http://localhost:8000/api/glooko-analysis/analysis_20250128_143022
 ```
 
 ### API Documentation
@@ -159,6 +292,39 @@ curl http://localhost:8000/api/health
 - Text input with placeholder
 - Send button (shows arrow on mobile)
 - Input validation with error messages
+
+### Data Analysis Tab
+
+#### Upload Section
+- Drag & drop zone for ZIP files
+- Click to open file browser
+- Progress bar during upload
+- Automatic analysis after upload
+
+#### Dashboard
+- **TIR Gauge**: Semicircle gauge showing time-in-range percentage
+  - Green: 70%+ (good)
+  - Orange: 50-70% (warning)
+  - Red: <50% (needs attention)
+- **Key Metrics**: Grid showing average glucose, std deviation, CV%, readings
+- **Distribution Bar**: Horizontal bar with below/in-range/above percentages
+
+#### Patterns Section
+- Cards for each detected pattern
+- Confidence indicator (high/medium/low)
+- Description and recommendations
+- Color-coded border by confidence
+
+#### Research Questions
+- Clickable buttons for each suggested question
+- Priority badges (high/medium/low)
+- Click sends question to chat tab
+
+#### History
+- List of previous analyses
+- TIR badge with color indicator
+- Pattern count
+- Click to reload analysis
 
 ## Keyboard Shortcuts
 
@@ -200,6 +366,24 @@ curl http://localhost:8000/api/health
 ### History Not Loading
 - Check browser's localStorage quota
 - Clear old data: `localStorage.removeItem('diabuddy_history_...')`
+
+### Glooko Upload Failed
+- Ensure file is a valid ZIP from Glooko export
+- Check file size is under 50MB
+- Try downloading a fresh export from Glooko
+
+### Analysis Shows No Data
+- Check Glooko export contains CGM/glucose data
+- Verify date range in export covers recent data
+- Check server logs for parsing errors:
+  ```bash
+  # Look for parsing warnings in terminal
+  ```
+
+### Patterns Not Detected
+- Requires sufficient data (ideally 7+ days)
+- Very stable glucose may not trigger patterns
+- Check if glucose data is in expected format
 
 ## Performance
 

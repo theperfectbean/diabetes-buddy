@@ -74,7 +74,7 @@ class ChromaDBBackend:
         
         self.client = genai.Client(api_key=api_key)
         self.model_name = "gemini-2.5-flash"
-        self.embedding_model = "text-embedding-004"
+        self.embedding_model = "models/gemini-embedding-001"
         
         # Set project root
         if project_root is None:

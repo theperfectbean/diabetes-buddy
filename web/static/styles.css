@@ -869,3 +869,624 @@ sup.ref-link:hover {
         font-size: 18px;
     }
 }
+
+/* ============================================
+   Tab Navigation
+   ============================================ */
+
+.tab-nav {
+    display: flex;
+    gap: 6px;
+    margin-right: 20px;
+}
+
+.tab-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+.tab-btn.active {
+    background: white;
+    color: var(--accent-primary);
+    border-color: white;
+    font-weight: 600;
+}
+
+.tab-btn:focus {
+    outline: 2px solid white;
+    outline-offset: 2px;
+}
+
+/* ============================================
+   Main Content & Panels
+   ============================================ */
+
+.main-content {
+    grid-column: 1;
+    overflow: hidden;
+}
+
+.panel {
+    display: none;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.panel.active {
+    display: block;
+}
+
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-secondary);
+}
+
+/* ============================================
+   Data Analysis Container
+   ============================================ */
+
+.data-analysis-container {
+    padding: 20px 30px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.data-analysis-container h2 {
+    color: var(--text-primary);
+    font-size: 18px;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-primary);
+}
+
+/* Upload Section */
+.upload-section {
+    margin-bottom: 30px;
+}
+
+.upload-area {
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.upload-area:hover,
+.upload-area.dragover {
+    border-color: var(--accent-primary);
+    background: rgba(102, 126, 234, 0.05);
+}
+
+.upload-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.upload-area p {
+    color: var(--text-secondary);
+    margin: 4px 0;
+}
+
+.upload-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.upload-progress {
+    padding: 20px;
+    text-align: center;
+}
+
+.progress-bar {
+    height: 8px;
+    background: var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+#uploadStatus {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* Dashboard Section */
+.dashboard-section {
+    margin-bottom: 30px;
+}
+
+.metrics-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.metric-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.metric-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* TIR Gauge */
+.gauge-card {
+    text-align: center;
+}
+
+.gauge-container {
+    position: relative;
+}
+
+.gauge-value {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.gauge-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
+/* Key Metrics Grid */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.metric {
+    text-align: center;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.metric-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+}
+
+.metric-value {
+    display: block;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.metric-unit {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* Time Distribution Bar */
+.time-distribution-card {
+    margin-bottom: 20px;
+}
+
+.time-bars {
+    display: flex;
+    height: 50px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.time-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 60px;
+    transition: flex 0.3s ease;
+}
+
+.time-bar.below {
+    background: #ef5350;
+    color: white;
+}
+
+.time-bar.in-range {
+    background: #4caf50;
+    color: white;
+}
+
+.time-bar.above {
+    background: #ff9800;
+    color: white;
+}
+
+.bar-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    opacity: 0.9;
+}
+
+.bar-value {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+/* Patterns Card */
+.patterns-card {
+    margin-bottom: 20px;
+}
+
+.patterns-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.no-patterns,
+.no-questions {
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+.pattern-item {
+    padding: 16px;
+    border-radius: 8px;
+    border-left: 4px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.pattern-item.pattern-high {
+    border-left-color: #4caf50;
+}
+
+.pattern-item.pattern-medium {
+    border-left-color: #ff9800;
+}
+
+.pattern-item.pattern-low {
+    border-left-color: var(--text-muted);
+}
+
+.pattern-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.pattern-type {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.pattern-confidence {
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg-primary);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.pattern-description {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.pattern-recommendation {
+    font-size: 13px;
+    color: var(--accent-primary);
+    font-style: italic;
+}
+
+/* Research Questions */
+.questions-card {
+    margin-bottom: 20px;
+}
+
+.questions-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
+.questions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.question-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.question-btn:hover {
+    border-color: var(--accent-primary);
+    background: rgba(102, 126, 234, 0.05);
+}
+
+.question-priority {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.priority-high {
+    background: #ef5350;
+    color: white;
+}
+
+.priority-medium {
+    background: #ff9800;
+    color: white;
+}
+
+.priority-low {
+    background: var(--border-color);
+    color: var(--text-secondary);
+}
+
+.question-text {
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+/* Warnings Section */
+.warnings-section {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+}
+
+.warnings-section h3 {
+    color: #856404;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+#warningsList {
+    margin: 0;
+    padding-left: 20px;
+    color: #856404;
+}
+
+#warningsList li {
+    margin-bottom: 6px;
+    line-height: 1.4;
+}
+
+/* History Section */
+.history-section {
+    margin-top: 30px;
+}
+
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.history-item:hover {
+    border-color: var(--accent-primary);
+    background: rgba(102, 126, 234, 0.02);
+}
+
+.history-item.not-analyzed {
+    opacity: 0.7;
+}
+
+.history-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.history-file {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.history-date {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.history-metrics {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.tir-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.tir-good {
+    background: #d4edda;
+    color: #155724;
+}
+
+.tir-warning {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.tir-danger {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.patterns-count {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.analyze-btn {
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.analyze-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+}
+
+.no-history,
+.loading,
+.error {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.error {
+    color: #dc3545;
+}
+
+/* ============================================
+   Data Analysis Responsive
+   ============================================ */
+
+@media (max-width: 768px) {
+    .tab-nav {
+        margin-right: 10px;
+    }
+
+    .tab-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+
+    .data-analysis-container {
+        padding: 15px;
+    }
+
+    .metrics-row {
+        grid-template-columns: 1fr;
+    }
+
+    .metrics-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .history-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .history-metrics {
+        width: 100%;
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 480px) {
+    .tab-nav {
+        order: 3;
+        width: 100%;
+        justify-content: center;
+        margin: 10px 0 0 0;
+    }
+
+    .header-actions {
+        flex-wrap: wrap;
+    }
+
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .time-bars {
+        flex-direction: column;
+        height: auto;
+    }
+
+    .time-bar {
+        padding: 10px;
+        flex-direction: row;
+        justify-content: space-between;
+    }
+}
