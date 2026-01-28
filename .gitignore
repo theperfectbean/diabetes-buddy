@@ -14,16 +14,21 @@ __pycache__/
 .env
 .env.local
 
-# IDE
-.vscode/
+# IDE (but keep .vscode/settings.json for MCP config)
+.vscode/*
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
 
-# Database
+# Database / Cache
 *.db
+.cache/
 chromadb/
 chroma_data/
+
+# User health data (PII)
+data/
 
 # Docs (if PDFs contain sensitive info)
 # docs/*.pdf
@@ -34,3 +39,5 @@ Thumbs.db
 
 # Logs
 *.log
+.venv/
+.vscode/
