@@ -46,6 +46,18 @@ The Diabetes Buddy project has been refactored to be LLM-agnostic, replacing dir
 
 ## Configuration
 
+### Installation
+
+Install the minimal (core) runtime into your project venv, and optionally install heavy provider/ML extras:
+
+```bash
+# from project root (recommended):
+python -m pip install -r requirements-core.txt
+
+# Optional extras (provider SDKs, local embedding runtimes):
+python -m pip install -r requirements-extras.txt
+```
+
 ### Environment Variables
 
 ```bash
@@ -348,6 +360,25 @@ The refactoring is a pure architectural change with zero breaking changes to fun
 - GeminiProvider wraps the existing file upload logic
 - Files must be under 20MB for Gemini
 - Check `get_model_info()` for provider-specific limits
+
+## Testing / CI notes
+
+A few small repository changes were made to keep test runs deterministic and CI-friendly during the provider migration:
+
+- Script-like verification files (`test_fix.py`, `test_llm_provider.py`) were wrapped in a `main()` and guarded with `if __name__ == "__main__"` so pytest does not execute top-level verification code during collection.
+- A `tests/conftest.py` fixture (`temp_dirs`) was added to provide temporary config/docs directories used by multiple tests.
+- Minor robustness fixes applied to support tests:
+    - `agents/llm_provider.py`: retry `models.generate_content()` without optional SDK kwargs if the installed google-genai SDK rejects them.
+    - `agents/glooko_query.py`: safer numeric formatting for generated answers used by unit assertions.
+    - `agents/knowledge_fetcher.py`: return structured failure results when downloads fail and no manual fallback exists, and ensure metadata directories are created before writing.
+    - `scripts/schedule_updates.py`: dynamic import of `KnowledgeFetcher` so test-time patches/mocks are respected.
+
+These changes are test-only hygiene and do not change production behavior of the provider abstraction. Run tests with:
+
+```bash
+source .venv/bin/activate
+pytest -q
+```
 
 ## Future Roadmap
 
