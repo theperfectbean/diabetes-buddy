@@ -6,6 +6,7 @@ including routing validation, retry logic, and error handling for Gemini API cal
 """
 
 import logging
+import os
 import tenacity
 from datetime import datetime
 from typing import Any, Dict
@@ -67,8 +68,9 @@ def detect_litellm_endpoint() -> Dict[str, Any]:
     from litellm import completion
 
     # Enable verbose logging to capture API call details
-    # Note: litellm.set_verbose is a boolean attribute, not a function
-    litellm.set_verbose = True
+    # Using environment variable instead of deprecated litellm.set_verbose
+    original_log_level = os.environ.get('LITELLM_LOG', '')
+    os.environ['LITELLM_LOG'] = 'DEBUG'
 
     # Set up log capture to parse verbose output
     log_capture = []
@@ -138,7 +140,11 @@ def detect_litellm_endpoint() -> Dict[str, Any]:
         # Clean up logging configuration to avoid side effects
         litellm_logger.removeHandler(capture_handler)
         litellm_logger.setLevel(original_level)
-        litellm.set_verbose = False
+        # Restore original log level
+        if original_log_level:
+            os.environ['LITELLM_LOG'] = original_log_level
+        else:
+            os.environ.pop('LITELLM_LOG', None)
 
     return {
         "endpoint": endpoint,
