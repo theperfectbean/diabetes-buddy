@@ -384,6 +384,21 @@ source .venv/bin/activate
 pytest -q
 ```
 
+Marking heavy tests
+-------------------
+
+Some tests may require downloading large models (e.g. `sentence-transformers`) or run longer integration checks. Mark such tests with the `@pytest.mark.integration` marker and run them explicitly:
+
+```bash
+# Run only fast/unit tests (skip integration):
+pytest -q -m "not integration"
+
+# Run integration tests only:
+pytest -q -m integration
+```
+
+The repository includes a `pytest.ini` registering the `integration` marker.
+
 ## Future Roadmap
 
 ### Phase 2: OpenAI Support (planned)
