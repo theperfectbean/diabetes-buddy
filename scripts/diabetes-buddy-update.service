@@ -1,0 +1,60 @@
+# Systemd Service for Diabetes Buddy Monthly Knowledge Base Updates
+#
+# This service is triggered by diabetes-buddy-update.timer
+#
+# Installation:
+#   sudo cp diabetes-buddy-update.service /etc/systemd/system/
+#   sudo cp diabetes-buddy-update.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable diabetes-buddy-update.timer
+#   sudo systemctl start diabetes-buddy-update.timer
+#
+# Manual run:
+#   sudo systemctl start diabetes-buddy-update.service
+#
+# Check logs:
+#   journalctl -u diabetes-buddy-update.service
+
+[Unit]
+Description=Diabetes Buddy Knowledge Base Monthly Update
+Documentation=file:///home/gary/diabetes-buddy/docs/AUTO_UPDATE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# Run as the user who owns the diabetes-buddy installation
+User=gary
+Group=gary
+
+# Working directory
+WorkingDirectory=/home/gary/diabetes-buddy
+
+# Environment variables
+Environment="PATH=/home/gary/diabetes-buddy/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/home/gary/diabetes-buddy"
+EnvironmentFile=-/home/gary/diabetes-buddy/.env
+
+# The update command
+ExecStart=/home/gary/diabetes-buddy/venv/bin/python /home/gary/diabetes-buddy/scripts/monthly_update.py
+
+# Timeout after 2 hours (PubMed can be slow)
+TimeoutStartSec=7200
+
+# Don't restart on failure (it's a one-shot update)
+Restart=no
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=50%
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/gary/diabetes-buddy/data /home/gary/diabetes-buddy/.cache /home/gary/diabetes-buddy/logs
+
+[Install]
+WantedBy=multi-user.target

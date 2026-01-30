@@ -1,0 +1,122 @@
+{
+  "api": {
+    "base_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/",
+    "api_key_env": "PUBMED_API_KEY",
+    "rate_limit_per_second": 3,
+    "rate_limit_with_key": 10,
+    "timeout_seconds": 30,
+    "max_retries": 3,
+    "retry_delay_seconds": 2
+  },
+  "search_terms": [
+    "\"type 1 diabetes\" AND (\"management\" OR \"insulin\" OR \"continuous glucose monitoring\")",
+    "hybrid closed loop diabetes",
+    "automated insulin delivery system",
+    "continuous glucose monitoring accuracy",
+    "insulin pump therapy outcomes",
+    "type 1 diabetes glycemic control"
+  ],
+  "filters": {
+    "days_back": 365,
+    "max_results_per_query": 50,
+    "language": "english",
+    "require_abstract": true,
+    "min_relevance_score": 0.6,
+    "open_access_only": true,
+    "full_text_available": true
+  },
+  "relevance_keywords": {
+    "high_weight": [
+      "type 1 diabetes",
+      "t1d",
+      "insulin pump",
+      "cgm",
+      "continuous glucose",
+      "closed loop",
+      "hybrid closed loop",
+      "automated insulin",
+      "basal rate",
+      "bolus",
+      "time in range",
+      "hypoglycemia",
+      "hyperglycemia"
+    ],
+    "medium_weight": [
+      "diabetes mellitus",
+      "glucose monitoring",
+      "insulin therapy",
+      "glycemic control",
+      "hba1c",
+      "blood glucose",
+      "carbohydrate",
+      "dawn phenomenon",
+      "exercise",
+      "insulin sensitivity"
+    ],
+    "low_weight": [
+      "diabetes",
+      "insulin",
+      "glucose",
+      "glycemia",
+      "pancreas"
+    ]
+  },
+  "safety": {
+    "disclaimer": "Research summary for informational purposes only. Always consult your healthcare provider before making any changes to your diabetes management.",
+    "dosage_keywords": [
+      "dosage",
+      "dose adjustment",
+      "units per",
+      "insulin dose",
+      "basal rate adjustment",
+      "correction factor",
+      "carb ratio"
+    ],
+    "default_confidence": 0.7,
+    "flag_for_review_keywords": [
+      "dosage recommendation",
+      "treatment protocol",
+      "clinical trial dosing"
+    ]
+  },
+  "storage": {
+    "research_papers_dir": "docs/research-papers",
+    "clinical_guidelines_dir": "docs/clinical-guidelines/ada-standards-2026",
+    "cache_dir": "data/cache",
+    "processed_pmids_file": "data/cache/pubmed_processed.json",
+    "processed_pmc_file": "data/cache/pmc_processed.json",
+    "index_file": "docs/research-papers/index.json"
+  },
+  "chromadb": {
+    "collection_name": "pubmed_research",
+    "default_confidence": 0.7
+  },
+  "pmc": {
+    "fetch_full_text": true,
+    "clinical_guidelines": {
+      "ada_standards_2026": [
+        "PMC12690167",
+        "PMC12690173",
+        "PMC12690174",
+        "PMC12690168",
+        "PMC12690169",
+        "PMC12690170",
+        "PMC12690171",
+        "PMC12690172",
+        "PMC12690175",
+        "PMC12690176",
+        "PMC12690177",
+        "PMC12690178",
+        "PMC12690179",
+        "PMC12690180",
+        "PMC12690181",
+        "PMC12690182",
+        "PMC12690183"
+      ]
+    }
+  },
+  "logging": {
+    "log_file": "logs/pubmed_ingestion.log",
+    "log_level": "INFO"
+  }
+}

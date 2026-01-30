@@ -73,6 +73,11 @@ class ChromaDBBackend:
         """
         # Get LLM provider (configured via LLM_PROVIDER env var)
         self.llm = LLMFactory.get_provider()
+        # Expose configured embedding model for diagnostics and downstream code
+        try:
+            self.embedding_model = getattr(self.llm, "embedding_model", None) or (self.llm.get_model_info().model_name if hasattr(self.llm, 'get_model_info') else None)
+        except Exception:
+            self.embedding_model = None
         
         # Set project root
         if project_root is None:
@@ -409,6 +414,30 @@ Your answer:"""
         chunks = self._search_collection("ada_standards", enhanced_query, top_k)
         return chunks
 
+    def search(self, query: str, top_k: int = 5) -> dict:
+        """
+        General search across all configured sources.
+
+        Returns a mapping of source_key -> list[SearchResult].
+        """
+        results = {}
+        for source_key in self.PDF_PATHS.keys():
+            method_name = f"search_{source_key}"
+            if hasattr(self, method_name):
+                try:
+                    fn = getattr(self, method_name)
+                    results[source_key] = fn(query, top_k=top_k)
+                except Exception:
+                    results[source_key] = []
+            else:
+                # fallback to collection search
+                try:
+                    results[source_key] = self._search_collection(source_key, query, top_k)
+                except Exception:
+                    results[source_key] = []
+
+        return results
+
     def search_australian_guidelines(self, query: str, top_k: int = 5) -> List[SearchResult]:
         """
         Search Australian Diabetes Guidelines.
@@ -446,6 +475,309 @@ Your answer:"""
         combined = ada_results + aus_results
         combined.sort(key=lambda x: x.confidence, reverse=True)
         return combined[:top_k * 2]  # Return up to 2x top_k results
+
+    def search_research_papers(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search PubMed research papers ingested into the knowledge base.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects from research papers
+        """
+        try:
+            collection = self.chroma_client.get_collection(name="pubmed_research")
+        except Exception:
+            # Collection doesn't exist yet (no papers ingested)
+            return []
+
+        if collection.count() == 0:
+            return []
+
+        # Embed query
+        try:
+            query_embedding = self.llm.embed_text(query)
+        except Exception as e:
+            print(f"Error embedding query: {e}")
+            return []
+
+        # Search ChromaDB
+        try:
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=min(top_k, collection.count())
+            )
+        except Exception as e:
+            print(f"Error querying research papers collection: {e}")
+            return []
+
+        # Convert to SearchResult objects
+        search_results = []
+        if results['documents'] and results['documents'][0]:
+            for i, doc in enumerate(results['documents'][0]):
+                metadata = results['metadatas'][0][i]
+                distance = results['distances'][0][i] if results['distances'] else 0.5
+
+                # Convert distance to confidence
+                confidence = 1.0 - (distance / 2.0)
+
+                search_results.append(SearchResult(
+                    quote=doc,
+                    page_number=None,
+                    confidence=confidence,
+                    source="PubMed Research Paper",
+                    context=f"Retrieved from {metadata.get('document_id', 'unknown')}"
+                ))
+
+        return search_results
+
+    def search_openaps_docs(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search OpenAPS community documentation (OpenAPS, AndroidAPS, Loop).
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects from community docs
+        """
+        try:
+            collection = self.chroma_client.get_collection(name="openaps_docs")
+        except Exception:
+            # Collection doesn't exist yet
+            return []
+
+        if collection.count() == 0:
+            return []
+
+        # Embed query
+        try:
+            query_embedding = self.llm.embed_text(query)
+        except Exception as e:
+            print(f"Error embedding query: {e}")
+            return []
+
+        # Search ChromaDB
+        try:
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=min(top_k, collection.count())
+            )
+        except Exception as e:
+            print(f"Error querying openaps_docs collection: {e}")
+            return []
+
+        # Convert to SearchResult objects
+        search_results = []
+        if results['documents'] and results['documents'][0]:
+            for i, doc in enumerate(results['documents'][0]):
+                metadata = results['metadatas'][0][i]
+                distance = results['distances'][0][i] if results['distances'] else 0.5
+
+                # Convert distance to confidence
+                confidence = metadata.get('confidence', 1.0 - (distance / 2.0))
+
+                search_results.append(SearchResult(
+                    quote=doc,
+                    page_number=None,
+                    confidence=confidence,
+                    source=f"OpenAPS Docs ({metadata.get('source_repo', 'unknown')})",
+                    context=metadata.get('file_path', '')
+                ))
+
+        return search_results
+
+    def search_all_collections(
+        self,
+        query: str,
+        top_k: int = 5,
+        deduplicate: bool = True,
+        similarity_threshold: float = 0.9
+    ) -> List[SearchResult]:
+        """
+        Search ALL collections and return merged, deduplicated results.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return per collection
+            deduplicate: Whether to remove near-duplicate results
+            similarity_threshold: Cosine similarity threshold for deduplication
+
+        Returns:
+            List of SearchResult objects sorted by confidence
+        """
+        import logging
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        logger = logging.getLogger(__name__)
+
+        # All available search methods and their collection names
+        search_methods = {
+            'theory': self.search_theory,
+            'camaps': self.search_camaps,
+            'ypsomed': self.search_ypsomed,
+            'libre': self.search_libre,
+            'ada_standards': self.search_ada_standards,
+            'australian_guidelines': self.search_australian_guidelines,
+            'research_papers': self.search_research_papers,
+            'openaps_docs': self.search_openaps_docs,
+        }
+
+        all_results = []
+        search_times = {}
+
+        # Search all collections in parallel
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_collection = {}
+            for name, search_fn in search_methods.items():
+                future_to_collection[executor.submit(
+                    self._timed_search, search_fn, query, top_k
+                )] = name
+
+            for future in as_completed(future_to_collection):
+                collection_name = future_to_collection[future]
+                try:
+                    results, elapsed = future.result()
+                    search_times[collection_name] = elapsed
+                    all_results.extend(results)
+                    logger.debug(f"Collection '{collection_name}': {len(results)} results in {elapsed:.3f}s")
+                except Exception as e:
+                    logger.warning(f"Error searching collection '{collection_name}': {e}")
+
+        # Log performance
+        total_time = sum(search_times.values())
+        logger.info(f"Multi-collection search: {len(all_results)} total results in {total_time:.3f}s")
+
+        # Sort by confidence
+        all_results.sort(key=lambda x: x.confidence, reverse=True)
+
+        # Deduplicate by content similarity
+        if deduplicate and len(all_results) > 1:
+            all_results = self._deduplicate_results(all_results, similarity_threshold)
+            logger.debug(f"After deduplication: {len(all_results)} results")
+
+        # Return top results
+        return all_results[:top_k]
+
+    def _timed_search(self, search_fn, query: str, top_k: int) -> tuple:
+        """Execute a search function and return (results, elapsed_time)."""
+        start = time.time()
+        try:
+            results = search_fn(query, top_k=top_k)
+        except TypeError:
+            # Some search methods don't accept top_k
+            results = search_fn(query)
+        elapsed = time.time() - start
+        return results, elapsed
+
+    def _deduplicate_results(
+        self,
+        results: List[SearchResult],
+        similarity_threshold: float = 0.9
+    ) -> List[SearchResult]:
+        """
+        Remove near-duplicate results based on content similarity.
+
+        Args:
+            results: List of SearchResult objects
+            similarity_threshold: Cosine similarity threshold (0.9 = 90% similar)
+
+        Returns:
+            Deduplicated list of SearchResult objects
+        """
+        if len(results) <= 1:
+            return results
+
+        # Get embeddings for all results
+        try:
+            texts = [r.quote[:500] for r in results]  # Use first 500 chars
+            embeddings = self.llm.embed_text(texts)
+        except Exception:
+            # If embedding fails, return original results
+            return results
+
+        # Calculate cosine similarity and filter duplicates
+        import numpy as np
+
+        embeddings_array = np.array(embeddings)
+        norms = np.linalg.norm(embeddings_array, axis=1, keepdims=True)
+        normalized = embeddings_array / (norms + 1e-10)
+
+        # Keep track of which results to keep
+        keep_indices = [0]  # Always keep the first (highest confidence)
+
+        for i in range(1, len(results)):
+            is_duplicate = False
+            for j in keep_indices:
+                similarity = np.dot(normalized[i], normalized[j])
+                if similarity >= similarity_threshold:
+                    is_duplicate = True
+                    break
+
+            if not is_duplicate:
+                keep_indices.append(i)
+
+        return [results[i] for i in keep_indices]
+
+    @staticmethod
+    def format_citation(result: SearchResult) -> str:
+        """
+        Format a search result with source attribution and confidence.
+
+        Args:
+            result: SearchResult object
+
+        Returns:
+            Formatted string like "[Source: OpenAPS Docs | Confidence: 0.80]"
+        """
+        return f"[Source: {result.source} | Confidence: {result.confidence:.2f}]"
+
+    def search_with_citations(
+        self,
+        query: str,
+        top_k: int = 5
+    ) -> List[dict]:
+        """
+        Search all collections and return results with formatted citations.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of dicts with 'content', 'citation', and 'metadata'
+        """
+        results = self.search_all_collections(query, top_k=top_k)
+
+        return [
+            {
+                'content': result.quote,
+                'citation': self.format_citation(result),
+                'metadata': {
+                    'source': result.source,
+                    'confidence': result.confidence,
+                    'page': result.page_number,
+                    'context': result.context
+                }
+            }
+            for result in results
+        ]
+
+    def get_collection_stats(self) -> dict:
+        """Get statistics for all ChromaDB collections."""
+        stats = {}
+        try:
+            for collection in self.chroma_client.list_collections():
+                stats[collection.name] = {
+                    'count': collection.count(),
+                    'metadata': collection.metadata
+                }
+        except Exception as e:
+            stats['error'] = str(e)
+        return stats
 
     def search_with_synthesis(self, source_key: str, query: str, top_k: int = 5) -> str:
         """
@@ -564,6 +896,98 @@ class ResearcherAgent:
         else:
             return []
 
+    def search_research_papers(self, query: str) -> List[SearchResult]:
+        """
+        Search PubMed research papers in the knowledge base.
+
+        Args:
+            query: Search query
+
+        Returns:
+            List of SearchResult objects from research papers
+        """
+        if self.use_chromadb:
+            return self.backend.search_research_papers(query)
+        else:
+            return []
+
+    def search_openaps_docs(self, query: str) -> List[SearchResult]:
+        """
+        Search OpenAPS community documentation.
+
+        Args:
+            query: Search query
+
+        Returns:
+            List of SearchResult objects from OpenAPS docs
+        """
+        if self.use_chromadb:
+            return self.backend.search_openaps_docs(query)
+        else:
+            return []
+
+    def search_all_collections(
+        self,
+        query: str,
+        top_k: int = 5,
+        deduplicate: bool = True
+    ) -> List[SearchResult]:
+        """
+        Search ALL collections and return merged, deduplicated results.
+
+        This is the recommended method for comprehensive queries that should
+        search across all knowledge sources (ada_guidelines, openaps_docs,
+        pubmed_research, glooko_data, etc.).
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+            deduplicate: Whether to remove near-duplicate results
+
+        Returns:
+            List of SearchResult objects sorted by confidence
+        """
+        if self.use_chromadb:
+            return self.backend.search_all_collections(
+                query, top_k=top_k, deduplicate=deduplicate
+            )
+        else:
+            # Fallback: search multiple sources manually
+            all_results = []
+            all_results.extend(self.search_theory(query))
+            all_results.extend(self.search_clinical_guidelines(query))
+            all_results.sort(key=lambda x: x.confidence, reverse=True)
+            return all_results[:top_k]
+
+    def search_with_citations(self, query: str, top_k: int = 5) -> List[dict]:
+        """
+        Search all collections and return results with formatted citations.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of dicts with 'content', 'citation', and 'metadata'
+        """
+        if self.use_chromadb:
+            return self.backend.search_with_citations(query, top_k)
+        else:
+            results = self.search_all_collections(query, top_k)
+            return [
+                {
+                    'content': r.quote,
+                    'citation': f"[Source: {r.source} | Confidence: {r.confidence:.2f}]",
+                    'metadata': {
+                        'source': r.source,
+                        'confidence': r.confidence,
+                        'page': r.page_number,
+                        'context': r.context
+                    }
+                }
+                for r in results
+            ]
+
     def search_multiple(self, query: str, sources: list[str]) -> dict[str, List[SearchResult]]:
         """
         Search multiple sources in parallel.
@@ -586,6 +1010,10 @@ class ResearcherAgent:
             "clinical_guidelines": self.search_clinical_guidelines,
             "ada_standards": self.search_ada_standards,
             "australian_guidelines": self.search_australian_guidelines,
+            "research_papers": self.search_research_papers,
+            "openaps_docs": self.search_openaps_docs,
+            "pubmed_research": self.search_research_papers,  # Alias
+            "glooko_data": lambda q: [],  # Placeholder - handled by GlookoQueryAgent
         }
         
         with ThreadPoolExecutor(max_workers=4) as executor:

@@ -1,0 +1,32 @@
+# Systemd Timer for Diabetes Buddy Monthly Knowledge Base Updates
+#
+# Installation:
+#   sudo cp diabetes-buddy-update.timer /etc/systemd/system/
+#   sudo cp diabetes-buddy-update.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable diabetes-buddy-update.timer
+#   sudo systemctl start diabetes-buddy-update.timer
+#
+# Check status:
+#   systemctl status diabetes-buddy-update.timer
+#   systemctl list-timers
+
+[Unit]
+Description=Diabetes Buddy Knowledge Base Monthly Update Timer
+Documentation=file:///home/gary/diabetes-buddy/docs/AUTO_UPDATE.md
+
+[Timer]
+# Run on the 1st of every month at 3:00 AM
+OnCalendar=*-*-01 03:00:00
+
+# If the system was off when the timer was supposed to run, run it now
+Persistent=true
+
+# Add some randomization to avoid thundering herd (0-4 hours)
+RandomizedDelaySec=14400
+
+# Wait 5 minutes after boot before running (in case of reboot on the 1st)
+OnBootSec=5min
+
+[Install]
+WantedBy=timers.target

@@ -30,6 +30,15 @@ chroma_data/
 # User health data (PII)
 data/
 
+# Cloned repos (too large for git)
+data/sources/
+
+# Update logs (generated)
+data/update_logs/
+
+# Cache files
+data/cache/
+
 # Docs (if PDFs contain sensitive info)
 # docs/*.pdf
 
