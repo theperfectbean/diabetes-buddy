@@ -137,6 +137,10 @@ embeddings = llm.embed_text([
 #### `upload_file(file_path, display_name=None) -> Any`
 
 Upload a file for use in prompts (multimodal).
+Bundle note
+-----------
+
+For offline transfer or review, a git bundle has been created and a small README describing how to import it is available at the repository root: `README_BUNDLE.md`. The bundle filename is `llm_provider_migration.bundle`.
 
 ```python
 llm = get_llm()
@@ -379,6 +383,21 @@ These changes are test-only hygiene and do not change production behavior of the
 source .venv/bin/activate
 pytest -q
 ```
+
+Marking heavy tests
+-------------------
+
+Some tests may require downloading large models (e.g. `sentence-transformers`) or run longer integration checks. Mark such tests with the `@pytest.mark.integration` marker and run them explicitly:
+
+```bash
+# Run only fast/unit tests (skip integration):
+pytest -q -m "not integration"
+
+# Run integration tests only:
+pytest -q -m integration
+```
+
+The repository includes a `pytest.ini` registering the `integration` marker.
 
 ## Future Roadmap
 

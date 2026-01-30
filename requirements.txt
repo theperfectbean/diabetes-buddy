@@ -1,7 +1,10 @@
-google-genai  # Primary LLM provider (optional for future multi-provider support)
+# LLM Provider - LiteLLM with multi-provider support
+litellm>=1.58.0
+tenacity>=8.2.0  # Retry logic for LLM API calls
 mcp
 python-dotenv
 PyPDF2
+pycryptodome  # For encrypted PDFs
 langchain
 langchain-google-genai
 chromadb
@@ -13,6 +16,11 @@ uvicorn[standard]
 beautifulsoup4>=4.12.0
 requests>=2.31.0
 schedule>=1.2.0
+aiohttp>=3.9.0  # Async HTTP for PubMed API
+nest-asyncio>=1.6.0  # Allow nested asyncio loops (for PMC fetcher in FastAPI)
+
+# PubMed/Bioinformatics
+biopython>=1.83  # PubMed article parsing utilities
 
 # Data analysis
 pandas>=2.0.0

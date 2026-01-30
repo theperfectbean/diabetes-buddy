@@ -90,14 +90,14 @@ See [VSCODE_QUICKSTART.md](VSCODE_QUICKSTART.md) for detailed instructions.
        ▼
 ┌──────────────────┐
 │  Triage Agent    │  Classifies: Theory/CamAPS/Ypsomed/Libre
-│  (Gemini 2.5)    │  Confidence: 70%+ → Single source
+│  (LiteLLM)       │  Confidence: 70%+ → Single source
 └──────┬───────────┘  Confidence: <70% → Multi-source
        │
        ▼
 ┌──────────────────┐
 │ Researcher Agent │  ChromaDB vector search (<1s)
 │  (ChromaDB +     │  Parallel multi-source queries
-│   Gemini 2.5)    │  In-memory result caching
+│   LiteLLM)       │  In-memory result caching
 └──────┬───────────┘
        │
        ▼
@@ -177,10 +177,17 @@ diabetes-buddy/
 
 ## 🔧 Configuration
 
+### LLM Provider
+
+Uses **LiteLLM** for multi-provider support with Google Gemini as the default. See [docs/LITELLM_MIGRATION.md](docs/LITELLM_MIGRATION.md) for details.
+
+Supported providers: Gemini, OpenAI, Anthropic, Ollama
+
 ### Environment Variables
 
 ```bash
-GEMINI_API_KEY=your-key-here     # Required
+GEMINI_API_KEY=your-key-here     # Required for Gemini
+GEMINI_MODEL=gemini/gemini-2.5-flash  # MUST include gemini/ prefix
 CACHE_DIR=/custom/path           # Optional
 ```
 
