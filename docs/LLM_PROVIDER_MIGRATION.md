@@ -137,6 +137,10 @@ embeddings = llm.embed_text([
 #### `upload_file(file_path, display_name=None) -> Any`
 
 Upload a file for use in prompts (multimodal).
+Bundle note
+-----------
+
+For offline transfer or review, a git bundle has been created and a small README describing how to import it is available at the repository root: `README_BUNDLE.md`. The bundle filename is `llm_provider_migration.bundle`.
 
 ```python
 llm = get_llm()
