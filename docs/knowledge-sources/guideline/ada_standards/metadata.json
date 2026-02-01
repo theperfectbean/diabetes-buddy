@@ -1,0 +1,115 @@
+{
+  "source_type": "guideline",
+  "source_id": "ada_standards",
+  "source_name": "ADA Standards of Medical Care in Diabetes 2026",
+  "version": "2026.01",
+  "fetched_at": "2026-01-30T05:19:57.965292",
+  "sections_fetched": 17,
+  "sections_failed": 0,
+  "results": [
+    {
+      "section": "summary_of_revisions",
+      "pmc_id": "PMC12690167",
+      "title": "Summary of Revisions: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "diabetes_technology",
+      "pmc_id": "PMC12690173",
+      "title": "7. Diabetes Technology: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "glycemic_goals",
+      "pmc_id": "PMC12690174",
+      "title": "Maternal Betahistine Exposure and Pregnancy Outcomes: A Retrospective Cohort Study",
+      "success": true
+    },
+    {
+      "section": "classification_diagnosis",
+      "pmc_id": "PMC12690168",
+      "title": "Introduction and Methodology: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "prevention_delay",
+      "pmc_id": "PMC12690169",
+      "title": "Disclosures: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "comprehensive_evaluation",
+      "pmc_id": "PMC12690170",
+      "title": "3. Prevention or Delay of Diabetes and Associated Comorbidities: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "facilitating_behavior_change",
+      "pmc_id": "PMC12690171",
+      "title": "1. Improving Care and Promoting Health in Populations: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "obesity_management",
+      "pmc_id": "PMC12690172",
+      "title": "8. Obesity and Weight Management for the Prevention and Treatment of Diabetes: Standards of Care in Diabetes\u20132026",
+      "success": true
+    },
+    {
+      "section": "pharmacologic_approaches",
+      "pmc_id": "PMC12690175",
+      "title": "Monoclonal Immunotactoid Glomerulopathy Associated With Chronic Lymphocytic Leukemia: A Case Report",
+      "success": true
+    },
+    {
+      "section": "cardiovascular_disease",
+      "pmc_id": "PMC12690176",
+      "title": "11. Chronic Kidney Disease and Risk Management: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "chronic_kidney_disease",
+      "pmc_id": "PMC12690177",
+      "title": "12. Retinopathy, Neuropathy, and Foot Care: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "retinopathy_neuropathy",
+      "pmc_id": "PMC12690178",
+      "title": "6. Glycemic Goals, Hypoglycemia, and Hyperglycemic Crises: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "older_adults",
+      "pmc_id": "PMC12690179",
+      "title": "Impact of Prosthetic Rehabilitation on Oral Health-Related Quality of Life in Patients With Oral Cancer at a Tertiary Care Center in Kerala",
+      "success": true
+    },
+    {
+      "section": "children_adolescents",
+      "pmc_id": "PMC12690180",
+      "title": "16. Diabetes Care in the Hospital: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "pregnancy",
+      "pmc_id": "PMC12690181",
+      "title": "15. Management of Diabetes in Pregnancy: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "hospital_care",
+      "pmc_id": "PMC12690182",
+      "title": "14. Children and Adolescents: Standards of Care in Diabetes\u20142026",
+      "success": true
+    },
+    {
+      "section": "advocacy",
+      "pmc_id": "PMC12690183",
+      "title": "2. Diagnosis and Classification of Diabetes: Standards of Care in Diabetes\u20142026",
+      "success": true
+    }
+  ],
+  "license": "Open Access via PubMed Central",
+  "organization": "American Diabetes Association"
+}

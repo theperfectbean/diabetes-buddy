@@ -11,6 +11,7 @@ chromadb
 pydantic-settings
 fastapi
 uvicorn[standard]
+tiktoken  # For token-based text chunking
 
 # Web scraping and automation
 beautifulsoup4>=4.12.0

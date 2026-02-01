@@ -1,0 +1,13 @@
+{
+  "source_type": "pump",
+  "source_id": "camaps_fx",
+  "source_name": "CamAPS FX",
+  "manufacturer": "CamDiab",
+  "version": "a817e669",
+  "source_url": "https://s3-eu-west-1.amazonaws.com/camdiab.user.manual/user_manual_fx_mmoll_commercial.pdf",
+  "fetched_at": "2026-01-30T05:19:00.456298",
+  "content_hash": "eea6567d8a438cb77b6a1a2e2f0172359e75ca95e1ff66804f9082719be8be63",
+  "file_size_bytes": 1594053,
+  "license": "Freely available from manufacturer",
+  "notes": "User manual typically updated quarterly"
+}

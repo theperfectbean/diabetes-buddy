@@ -184,16 +184,21 @@ class MonthlyUpdateOrchestrator:
         pubmed_result = asyncio.run(self._update_pubmed_articles())
         self.report.add_phase(pubmed_result)
 
-        # Phase 3: Calculate storage and stats
+        # Phase 3: Update ADA Standards
+        ada_result = self._update_ada_standards()
+        self.report.add_phase(ada_result)
+
+        # Phase 4: Calculate storage and stats
         self._calculate_storage_stats()
 
-        # Phase 4: Generate changelog
+        # Phase 5: Generate changelog
         self._generate_changelog()
 
         # Update last run times
         if not self.dry_run:
             self.tracker.set_last_run('openaps')
             self.tracker.set_last_run('pubmed')
+            self.tracker.set_last_run('ada')
             self.tracker.save()
 
         self.report.end_time = datetime.now()
@@ -352,6 +357,97 @@ class MonthlyUpdateOrchestrator:
 
         result.end_time = datetime.now()
         logger.info(f"PubMed update completed in {result.elapsed_seconds:.1f}s")
+        return result
+
+    def _update_ada_standards(self) -> UpdatePhaseResult:
+        """Update ADA Standards of Care from PMC."""
+        result = UpdatePhaseResult(phase_name="ADA Standards")
+        logger.info("\n" + "-" * 50)
+        logger.info("PHASE 3: ADA Standards Update")
+        logger.info("-" * 50)
+
+        try:
+            # Import the ADA ingestion module
+            import subprocess
+            import sys
+
+            # Check if PDFs are available for ingestion
+            pdf_dir = PROJECT_ROOT / "data" / "knowledge" / "ada_standards_pdfs"
+            has_pdfs = pdf_dir.exists() and list(pdf_dir.glob("*.pdf"))
+
+            if has_pdfs:
+                logger.info(f"Detected {len(list(pdf_dir.glob('*.pdf')))} ADA Standards PDFs")
+                # Check if PDFs are already ingested
+                try:
+                    import chromadb
+                    from chromadb.config import Settings
+                    client = chromadb.PersistentClient(
+                        path=str(CHROMADB_PATH),
+                        settings=Settings(anonymized_telemetry=False)
+                    )
+                    collection = client.get_collection(name="ada_standards")
+                    results = collection.get(include=["metadatas"])
+                    pdf_chunks = sum(1 for meta in results['metadatas']
+                                   if meta.get('source_type') == 'full_text_pdf')
+
+                    if pdf_chunks == 0:
+                        logger.info("PDFs detected but not ingested - running ingestion...")
+                        if not self.dry_run:
+                            # Run PDF ingestion
+                            cmd = [sys.executable, "scripts/ingest_ada_standards.py", "--pdf-only"]
+                            proc = subprocess.run(cmd, capture_output=True, text=True, cwd=PROJECT_ROOT)
+                            if proc.returncode == 0:
+                                logger.info("PDF ingestion completed successfully")
+                                # Parse output to get chunk count
+                                for line in proc.stdout.split('\n'):
+                                    if "Chunks added:" in line:
+                                        try:
+                                            result.embeddings_created = int(line.split(":")[1].strip())
+                                        except ValueError:
+                                            pass
+                            else:
+                                result.errors.append(f"PDF ingestion failed: {proc.stderr}")
+                        else:
+                            logger.info("[DRY RUN] Would ingest ADA Standards PDFs")
+                    else:
+                        logger.info(f"PDFs already ingested ({pdf_chunks} chunks)")
+
+                except Exception as e:
+                    logger.warning(f"Error checking PDF ingestion status: {e}")
+            else:
+                logger.info("No ADA Standards PDFs found - abstracts update via PMC")
+
+            # Always update abstracts (check for new Standards annually)
+            logger.info("Checking for ADA Standards updates via PMC...")
+            if not self.dry_run:
+                # Run abstract ingestion (will skip if already up to date)
+                cmd = [sys.executable, "scripts/ingest_ada_standards.py"]
+                proc = subprocess.run(cmd, capture_output=True, text=True, cwd=PROJECT_ROOT)
+                if proc.returncode == 0:
+                    logger.info("ADA Standards abstracts updated successfully")
+                    # Could parse chunk count here if needed
+                else:
+                    # Check if it's just "already up to date" or a real error
+                    if "already exists" in proc.stderr or "Chunks added: 0" in proc.stdout:
+                        logger.info("ADA Standards already up to date")
+                    else:
+                        result.errors.append(f"ADA Standards update failed: {proc.stderr}")
+            else:
+                logger.info("[DRY RUN] Would update ADA Standards abstracts")
+
+            result.success = len(result.errors) == 0
+
+        except ImportError as e:
+            logger.error(f"Failed to import ADA ingestion module: {e}")
+            result.errors.append(str(e))
+            result.success = False
+        except Exception as e:
+            logger.error(f"Error during ADA Standards update: {e}")
+            result.errors.append(str(e))
+            result.success = False
+
+        result.end_time = datetime.now()
+        logger.info(f"ADA Standards update completed in {result.elapsed_seconds:.1f}s")
         return result
 
     def _calculate_storage_stats(self):

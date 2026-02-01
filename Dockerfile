@@ -20,16 +20,23 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Install runtime dependencies (git for OpenAPS docs fetching)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy installed packages from builder
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
-# Copy application code
+# Copy application code (volume-mounted dirs excluded: docs, data, logs, config, scripts)
 COPY agents/ ./agents/
 COPY diabuddy/ ./diabuddy/
 COPY web/ ./web/
-COPY docs/ ./docs/
 COPY mcp_server.py .
+
+# Create directories for volume mounts
+RUN mkdir -p /app/docs /app/data /app/logs /app/config /app/scripts
 
 # Create cache directory for ChromaDB
 RUN mkdir -p /app/.cache/chromadb

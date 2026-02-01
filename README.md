@@ -73,6 +73,23 @@ See [VSCODE_QUICKSTART.md](VSCODE_QUICKSTART.md) for detailed instructions.
 
 ## 📚 Knowledge Sources
 
+Diabetes Buddy includes:
+
+- **Tier 1**: ADA Standards of Care 2026 (abstracts via PMC API - auto-updated monthly)
+- **Tier 2**: OpenAPS, Loop, AndroidAPS community docs (auto-updated monthly)  
+- **Tier 3**: PubMed research, Wikipedia education (auto-updated weekly)
+
+### Optional: Enhanced ADA Full-Text
+
+For detailed clinical recommendations beyond abstracts:
+1. Run: `python scripts/download_ada_helper.py`
+2. Follow prompts to download PDFs from diabetesjournals.org
+3. Auto-ingestion triggers when complete (~300-500 additional chunks)
+
+**Legal Note:** PDFs are user-provided for personal educational use only.
+
+### Legacy Sources
+
 | Source | Content | Pages |
 |--------|---------|-------|
 | **Think Like a Pancreas** | Behavioral strategies, insulin logic | ~400 |

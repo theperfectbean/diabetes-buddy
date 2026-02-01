@@ -21,10 +21,16 @@ services:
       - ./agents:/app/agents
       - ./web:/app/web
       - ./diabuddy:/app/diabuddy
-      # Mount docs for easy updates
-      - ./docs:/app/docs:ro
+      # Mount docs - knowledge-sources needs write access for fetching
+      - ./docs:/app/docs
       # Persist uploaded data and analysis results
       - ./data:/app/data
+      # Mount config for knowledge base settings and user profile
+      - ./config:/app/config
+      # Persist logs for update history
+      - ./logs:/app/logs
+      # Mount scripts for scheduler
+      - ./scripts:/app/scripts
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]

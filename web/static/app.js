@@ -14,6 +14,12 @@ class DiabetesBuddyChat {
         this.exportBtn = document.getElementById('exportBtn');
         this.themeToggle = document.getElementById('themeToggle');
 
+        // Settings modal elements
+        this.settingsBtn = document.getElementById('settingsBtn');
+        this.settingsModal = document.getElementById('settingsModal');
+        this.pdfUploadArea = document.getElementById('pdfUploadArea');
+        this.pdfFileInput = document.getElementById('pdfFileInput');
+
         // Tab navigation
         this.chatTab = document.getElementById('chatTab');
         this.dataTab = document.getElementById('dataTab');
@@ -201,6 +207,47 @@ class DiabetesBuddyChat {
                 this.queryInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 300);
         });
+
+        // Settings modal
+        if (this.settingsBtn) {
+            this.settingsBtn.addEventListener('click', () => this.openSettings());
+        }
+
+        const settingsClose = this.settingsModal?.querySelector('.modal-close');
+        if (settingsClose) {
+            settingsClose.addEventListener('click', () => this.closeSettings());
+        }
+
+        this.settingsModal?.addEventListener('click', (e) => {
+            if (e.target === this.settingsModal) this.closeSettings();
+        });
+
+        // PDF upload handlers
+        if (this.pdfUploadArea) {
+            this.pdfUploadArea.addEventListener('click', () => this.pdfFileInput?.click());
+            this.pdfUploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                this.pdfUploadArea.classList.add('dragover');
+            });
+            this.pdfUploadArea.addEventListener('dragleave', () => {
+                this.pdfUploadArea.classList.remove('dragover');
+            });
+            this.pdfUploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                this.pdfUploadArea.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) {
+                    this.uploadPDF(e.dataTransfer.files[0]);
+                }
+            });
+        }
+
+        if (this.pdfFileInput) {
+            this.pdfFileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    this.uploadPDF(e.target.files[0]);
+                }
+            });
+        }
     }
 
     setupModalFocusTrap() {
@@ -277,7 +324,7 @@ class DiabetesBuddyChat {
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                const response = await fetch('/api/query', {
+                const response = await fetch('/api/query/unified', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query })
@@ -679,24 +726,64 @@ class DiabetesBuddyChat {
 
     async loadSources() {
         try {
-            const response = await fetch('/api/sources');
+            const response = await fetch('/api/sources/list');
             const data = await response.json();
 
             this.sourcesList.innerHTML = '';
 
-            data.sources.forEach(source => {
-                const div = document.createElement('div');
-                div.className = 'source-item';
-                div.setAttribute('role', 'listitem');
-                div.innerHTML = `
-                    <strong>${source.name}</strong>
-                    ${source.author ? `<small>${source.author}</small>` : ''}
-                    <small>${source.description}</small>
+            // Public Knowledge Section
+            const publicSection = document.createElement('div');
+            publicSection.className = 'sources-section';
+            publicSection.innerHTML = '<h4>Public Knowledge</h4>';
+
+            if (data.public_sources && data.public_sources.length > 0) {
+                data.public_sources.forEach(source => {
+                    const div = document.createElement('div');
+                    div.className = 'source-item public';
+                    div.innerHTML = `
+                        <div class="source-info">
+                            <strong>${source.name}</strong>
+                            <small>${source.chunk_count} chunks</small>
+                        </div>
+                    `;
+                    publicSection.appendChild(div);
+                });
+            } else {
+                publicSection.innerHTML += '<div class="source-item muted">No public sources available</div>';
+            }
+
+            this.sourcesList.appendChild(publicSection);
+
+            // User Guides Section
+            const userSection = document.createElement('div');
+            userSection.className = 'sources-section';
+            userSection.innerHTML = '<h4>Your Product Guides</h4>';
+
+            if (data.user_sources && data.user_sources.length > 0) {
+                data.user_sources.forEach(source => {
+                    const div = document.createElement('div');
+                    div.className = 'source-item user';
+                    div.innerHTML = `
+                        <div class="source-info">
+                            <strong>${source.display_name}</strong>
+                            <small>${source.indexed ? source.chunk_count + ' chunks' : 'Indexing...'}</small>
+                        </div>
+                    `;
+                    userSection.appendChild(div);
+                });
+            } else {
+                userSection.innerHTML += `
+                    <div class="source-item muted">
+                        No guides uploaded. <a href="#" onclick="diabuddyChat.openSettings(); return false;">Add one</a>
+                    </div>
                 `;
-                this.sourcesList.appendChild(div);
-            });
+            }
+
+            this.sourcesList.appendChild(userSection);
+
         } catch (error) {
-            this.sourcesList.innerHTML = `<div class="source-item error">Failed to load sources</div>`;
+            console.error('Failed to load sources:', error);
+            this.sourcesList.innerHTML = '<div class="source-item error">Failed to load sources</div>';
         }
     }
 
@@ -1171,54 +1258,34 @@ class DiabetesBuddyChat {
         if (!kbStatus) return;
         
         try {
-            const response = await fetch('/api/knowledge/status');
+            const response = await fetch('/api/sources/list');
             const data = await response.json();
             
-            const sources = data.sources || [];
-            const profile = data.profile || {};
-            
-            // Check if setup is needed
-            if (sources.length === 0 || !profile.devices || (!profile.devices.pump && !profile.devices.cgm)) {
-                kbStatus.innerHTML = `
-                    <div class="kb-notification">
-                        <div class="kb-notification-title">⚙️ Setup Required</div>
-                        <div class="kb-notification-text">Configure your devices to enable the knowledge base</div>
-                    </div>
-                    <div class="kb-actions">
-                        <a href="/setup" class="kb-btn kb-btn-primary">Start Setup</a>
-                    </div>
-                `;
-                return;
-            }
+            const userSources = data.user_sources || [];
+            const publicSources = data.public_sources || [];
+            const allSources = [...userSources, ...publicSources];
             
             // Count by status
             const statusCounts = {
-                current: sources.filter(s => s.status === 'current').length,
-                stale: sources.filter(s => s.status === 'stale').length,
-                outdated: sources.filter(s => s.status === 'outdated').length,
-                error: sources.filter(s => s.status === 'error').length
+                current: allSources.filter(s => s.status === 'current').length,
+                stale: allSources.filter(s => s.status === 'stale').length,
+                outdated: allSources.filter(s => s.status === 'outdated').length,
+                error: allSources.filter(s => s.status === 'error').length
             };
             
             // Build HTML
             let html = `
                 <div class="kb-summary">
                     <div class="kb-summary-text">
-                        <div class="kb-summary-count">${sources.length}</div>
+                        <div class="kb-summary-count">${allSources.length}</div>
                         <div class="kb-summary-label">Knowledge Sources</div>
                     </div>
                 </div>
             `;
             
-            // Show last check time
-            if (data.last_check) {
-                const lastCheck = new Date(data.last_check);
-                const timeAgo = this.formatTimeAgo(lastCheck);
-                html += `<div class="kb-last-check">Last checked ${timeAgo}</div>`;
-            }
-            
             // Show source list (compact)
-            sources.slice(0, 5).forEach(source => {
-                const statusClass = source.status || 'unknown';
+            allSources.slice(0, 5).forEach(source => {
+                const statusClass = source.status || 'current';
                 const statusLabel = statusClass.charAt(0).toUpperCase() + statusClass.slice(1);
                 
                 html += `
@@ -1231,28 +1298,14 @@ class DiabetesBuddyChat {
                 `;
             });
             
-            if (sources.length > 5) {
-                html += `<div class="kb-last-check">+${sources.length - 5} more sources</div>`;
+            if (allSources.length > 5) {
+                html += `<div class="kb-last-check">+${allSources.length - 5} more sources</div>`;
             }
             
-            // Check for notifications
-            const notifResponse = await fetch('/api/knowledge/notifications');
-            const notifData = await notifResponse.json();
-            const unreadNotifications = (notifData.notifications || []).filter(n => !n.read);
-            
-            if (unreadNotifications.length > 0) {
-                html += `
-                    <div class="kb-notification">
-                        <div class="kb-notification-title">🔔 ${unreadNotifications.length} Update${unreadNotifications.length > 1 ? 's' : ''} Available</div>
-                        <div class="kb-notification-text">${unreadNotifications[0].title}</div>
-                    </div>
-                `;
-            }
-            
-            // Actions
+            // Actions - link to settings for managing sources
             html += `
                 <div class="kb-actions">
-                    <button class="kb-btn kb-btn-secondary" onclick="diabuddyChat.checkKnowledgeUpdates()">Check Now</button>
+                    <button class="kb-btn kb-btn-secondary" onclick="diabuddyChat.openSettings()">Manage Sources</button>
                 </div>
             `;
             
@@ -1269,51 +1322,171 @@ class DiabetesBuddyChat {
         }
     }
     
-    async checkKnowledgeUpdates() {
-        const kbStatus = document.getElementById('kbStatus');
-        if (!kbStatus) return;
-        
-        try {
-            // Show loading state
-            const currentHTML = kbStatus.innerHTML;
-            kbStatus.innerHTML = '<div class="kb-loading">Checking for updates...</div>';
-            
-            const response = await fetch('/api/knowledge/check-updates', {
-                method: 'POST'
-            });
-            const data = await response.json();
-            
-            if (data.updates_found > 0) {
-                alert(`Found ${data.updates_found} update(s)! Check the knowledge base for details.`);
-            } else {
-                alert('All sources are up to date!');
-            }
-            
-            // Reload status
-            await this.loadKnowledgeBaseStatus();
-            
-        } catch (error) {
-            console.error('Failed to check updates:', error);
-            alert('Failed to check for updates. Please try again.');
-            // Restore previous content
-            await this.loadKnowledgeBaseStatus();
-        }
-    }
-    
     formatTimeAgo(date) {
         const seconds = Math.floor((new Date() - date) / 1000);
-        
+
         if (seconds < 60) return 'just now';
         if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
         if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
         if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
         return date.toLocaleDateString();
     }
+
+    openSettings() {
+        this.settingsModal?.classList.add('active');
+        this.loadSettingsSources();
+    }
+
+    closeSettings() {
+        this.settingsModal?.classList.remove('active');
+        this.loadSources(); // Refresh sidebar
+    }
+
+    async loadSettingsSources() {
+        const userList = document.getElementById('userSourcesList');
+        const publicList = document.getElementById('publicSourcesList');
+
+        try {
+            const response = await fetch('/api/sources/list');
+            const data = await response.json();
+
+            // Render user sources
+            if (data.user_sources && data.user_sources.length > 0) {
+                userList.innerHTML = data.user_sources.map(source => `
+                    <div class="user-source-item">
+                        <div class="user-source-info">
+                            <div class="user-source-name">${source.display_name}</div>
+                            <div class="user-source-meta">
+                                ${source.indexed ? `${source.chunk_count} chunks indexed` : 'Indexing...'}
+                                · Uploaded ${new Date(source.uploaded_at).toLocaleDateString()}
+                            </div>
+                        </div>
+                        <button class="user-source-delete"
+                                onclick="diabuddyChat.deleteUserSource('${source.filename}')">
+                            Delete
+                        </button>
+                    </div>
+                `).join('');
+            } else {
+                userList.innerHTML = '<div class="no-sources">No product guides uploaded yet</div>';
+            }
+
+            // Render public sources
+            if (data.public_sources && data.public_sources.length > 0) {
+                publicList.innerHTML = data.public_sources.map(source => `
+                    <div class="public-source-item">
+                        <span class="public-source-name">${source.name}</span>
+                        <span class="public-source-status">${source.chunk_count} chunks</span>
+                    </div>
+                `).join('');
+            } else {
+                publicList.innerHTML = '<div class="no-sources">Loading...</div>';
+            }
+
+        } catch (error) {
+            console.error('Failed to load settings sources:', error);
+            userList.innerHTML = '<div class="error">Failed to load sources</div>';
+        }
+    }
+
+    async uploadPDF(file) {
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+            alert('Please upload a PDF file');
+            return;
+        }
+
+        if (file.size > 50 * 1024 * 1024) {
+            alert('File too large. Maximum size is 50MB');
+            return;
+        }
+
+        const progress = document.getElementById('pdfUploadProgress');
+        const progressFill = document.getElementById('pdfProgressFill');
+        const status = document.getElementById('pdfUploadStatus');
+        const uploadArea = document.getElementById('pdfUploadArea');
+
+        progress?.removeAttribute('hidden');
+        uploadArea?.setAttribute('hidden', '');
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            status.textContent = 'Uploading...';
+            progressFill.style.width = '30%';
+
+            const response = await fetch('/api/sources/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            progressFill.style.width = '70%';
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Upload failed');
+            }
+
+            const result = await response.json();
+
+            progressFill.style.width = '100%';
+            status.textContent = `Uploaded: ${result.display_name}`;
+
+            // Refresh lists
+            setTimeout(() => {
+                progress?.setAttribute('hidden', '');
+                uploadArea?.removeAttribute('hidden');
+                progressFill.style.width = '0%';
+                this.loadSettingsSources();
+                this.loadSources();
+            }, 1500);
+
+        } catch (error) {
+            console.error('Upload error:', error);
+            status.textContent = `Error: ${error.message}`;
+            setTimeout(() => {
+                progress?.setAttribute('hidden', '');
+                uploadArea?.removeAttribute('hidden');
+            }, 3000);
+        }
+    }
+
+    async deleteUserSource(filename) {
+        if (!confirm(`Delete "${filename}"? This will remove it from your knowledge base.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/sources/${encodeURIComponent(filename)}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Delete failed');
+            }
+
+            // Refresh lists
+            this.loadSettingsSources();
+            this.loadSources();
+
+        } catch (error) {
+            console.error('Delete error:', error);
+            alert(`Failed to delete: ${error.message}`);
+        }
+    }
 }
+
+
+
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     window.diabuddyChat = new DiabetesBuddyChat();
+
     // Load knowledge base status
     window.diabuddyChat.loadKnowledgeBaseStatus();
+
+    // Load sources in sidebar
+    window.diabuddyChat.loadSources();
 });

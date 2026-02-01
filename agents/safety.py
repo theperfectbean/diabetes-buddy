@@ -128,6 +128,26 @@ class SafetyAuditor:
         (r'\b(\d+\.?\d*)\s*(u|units?|iu)\s+(for|per|covers?)\s+\d+\s*(g|grams?|carbs?)\b', 'calculated_dose'),
     ]
 
+    # Patterns for detecting dosing questions in queries
+    DOSING_QUERY_PATTERNS = [
+        r'\bhow much insulin\b',
+        r'\binsulin dose\b',
+        r'\bbolus calculation\b',
+        r'\bcalculate.*bolus\b',
+        r'\bcarb ratio\b',
+        r'\binsulin.*carb.*ratio\b',
+        r'\bcalculate.*insulin\b',
+        r'\bdose.*carbs?\b',
+        r'\binsulin.*for.*carbs?\b',
+    ]
+
+    # Patterns for product-specific config questions
+    PRODUCT_CONFIG_PATTERNS = [
+        r'\b(configure|setup|install|set up)\s+(autosens|autotune|extended bolus|temp basal|basal rate|carb ratio|correction factor|sensitivity factor)\b',
+        r'\bhow.*(configure|setup|install|set up).*(pump|cgm|sensor|loop|openaps|androidaps|camaps|control.?iq|omnipod|tandem|medtronic)\b',
+        r'\b(configure|setup|install|set up).*(pump|cgm|sensor|loop|openaps|androidaps|camaps|control.?iq|omnipod|tandem|medtronic)\b',
+    ]
+
     # Patterns for other dangerous content
     DANGER_PATTERNS = [
         (r'\b(skip|stop|discontinue)\s+(your\s+)?(insulin|medication|meds)\b', 'medication_advice'),
@@ -179,6 +199,22 @@ class SafetyAuditor:
                 ))
 
         return findings
+
+    def _detect_dosing_query(self, query: str) -> bool:
+        """Detect if query is asking for specific dosing advice."""
+        query_lower = query.lower()
+        for pattern in self.DOSING_QUERY_PATTERNS:
+            if re.search(pattern, query_lower, re.IGNORECASE):
+                return True
+        return False
+
+    def _detect_product_config_query(self, query: str) -> bool:
+        """Detect if query is asking for product-specific configuration."""
+        query_lower = query.lower()
+        for pattern in self.PRODUCT_CONFIG_PATTERNS:
+            if re.search(pattern, query_lower, re.IGNORECASE):
+                return True
+        return False
 
     def _apply_transformations(self, text: str, findings: list[SafetyFinding]) -> str:
         """Apply safety transformations to text based on findings."""
@@ -298,6 +334,51 @@ class SafetyAuditor:
         Returns:
             SafeResponse with audited response and triage details
         """
+        # Check for dangerous queries first
+        if self._detect_dosing_query(query):
+            safe_response = "I cannot provide specific insulin dosing advice. Individual insulin-to-carbohydrate ratios vary. Please consult your diabetes care team.\n\n### Sources\n- Safety guidelines"
+            audit = AuditResult(
+                timestamp=datetime.now(),
+                query=query,
+                original_response="",
+                safe_response=safe_response,
+                findings=[SafetyFinding(
+                    severity=Severity.BLOCKED,
+                    category="dosing_question",
+                    original_text=query,
+                    replacement_text=safe_response,
+                    reason="Query detected as asking for specific insulin dosing advice"
+                )],
+                disclaimer_added=True,
+            )
+            return SafeResponse(
+                response=safe_response,
+                audit=audit,
+                triage_response=None,
+            )
+
+        if self._detect_product_config_query(query):
+            safe_response = "I can provide general diabetes management principles, but cannot give device-specific configuration instructions. Please refer to your device's user manual or contact your healthcare provider.\n\n### Sources\n- Educational resources"
+            audit = AuditResult(
+                timestamp=datetime.now(),
+                query=query,
+                original_response="",
+                safe_response=safe_response,
+                findings=[SafetyFinding(
+                    severity=Severity.BLOCKED,
+                    category="product_config_question",
+                    original_text=query,
+                    replacement_text=safe_response,
+                    reason="Query detected as asking for product-specific configuration"
+                )],
+                disclaimer_added=True,
+            )
+            return SafeResponse(
+                response=safe_response,
+                audit=audit,
+                triage_response=None,
+            )
+
         if not self.triage:
             raise RuntimeError("No TriageAgent configured. Use audit_text() instead.")
 

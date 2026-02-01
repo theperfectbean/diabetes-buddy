@@ -39,6 +39,9 @@ data/update_logs/
 # Cache files
 data/cache/
 
+# User-provided ADA Standards PDFs (copyrighted content)
+data/knowledge/ada_standards_pdfs/
+
 # Docs (if PDFs contain sensitive info)
 # docs/*.pdf
 

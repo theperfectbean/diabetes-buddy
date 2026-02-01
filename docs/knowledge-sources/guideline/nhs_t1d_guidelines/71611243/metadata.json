@@ -1,0 +1,13 @@
+{
+  "source_type": "guideline",
+  "source_id": "nhs_t1d_guidelines",
+  "source_name": "NHS Type 1 Diabetes in Adults Guidelines",
+  "manufacturer": "National Institute for Health and Care Excellence (NICE)",
+  "version": "71611243",
+  "source_url": "https://www.nice.org.uk/guidance/ng17/resources/type-1-diabetes-in-adults-diagnosis-and-management-pdf-1837276469701",
+  "fetched_at": "2026-01-30T05:18:52.639934",
+  "content_hash": "f43f4f5d873b90bac265a9b1bdd1df7d2ac2c71d79cc6a8161a34b09cc40a900",
+  "file_size_bytes": 335010,
+  "license": "Open Government License",
+  "notes": "Updated periodically, check for major revisions"
+}

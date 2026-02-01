@@ -1,0 +1,13 @@
+# Provider adapters and SDKs (optional)
+google-genai
+openai
+anthropic
+ollama
+
+# Embeddings and local model runtimes (heavy; optional)
+sentence-transformers
+torch
+transformers
+
+# HuggingFace accelerated downloads (optional)
+# huggingface-hub

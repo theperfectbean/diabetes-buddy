@@ -1,0 +1,48 @@
+{
+  "version": "1.0.0",
+  "created_at": "2026-01-29T05:22:11.725749",
+  "devices": {
+    "pump": "camaps_fx",
+    "cgm": "libre_3"
+  },
+  "knowledge_sources": [
+    {
+      "type": "guideline",
+      "id": "ada_standards",
+      "added_at": "2026-01-30T05:18:47.615116",
+      "version": "2026.01"
+    },
+    {
+      "type": "guideline",
+      "id": "nhs_t1d_guidelines",
+      "added_at": "2026-01-30T05:18:52.640977",
+      "version": "71611243"
+    },
+    {
+      "type": "guideline",
+      "id": "openaps_docs",
+      "added_at": "2026-01-30T05:18:55.252487",
+      "version": "30b2443b"
+    },
+    {
+      "type": "pump",
+      "id": "camaps_fx",
+      "added_at": "2026-01-30T05:19:00.460615",
+      "version": "a817e669"
+    },
+    {
+      "type": "cgm",
+      "id": "libre_3",
+      "added_at": "2026-01-30T05:19:03.856337",
+      "version": "3d9e1c01"
+    }
+  ],
+  "auto_update_enabled": true,
+  "update_preferences": {
+    "notify_on_guideline_changes": true,
+    "notify_on_device_updates": false,
+    "update_frequency_days": 7
+  },
+  "setup_completed_at": "2026-01-30T05:18:12.570768",
+  "last_update_check": "2026-01-31T13:11:49.407800"
+}

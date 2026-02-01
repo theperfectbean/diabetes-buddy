@@ -26,9 +26,15 @@ env
 .env
 .env.*
 
-# Documentation (not needed in container)
+# Volume-mounted directories (not needed in build context)
+docs/
+data/
+logs/
+config/
+scripts/
+
+# Markdown files at root level
 *.md
-!docs/**/*.md
 
 # Claude Code
 .claude

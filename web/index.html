@@ -25,6 +25,9 @@
                         Data Analysis
                     </button>
                 </nav>
+                <button id="settingsBtn" class="header-btn" aria-label="Settings" title="Settings">
+                    ⚙️ Settings
+                </button>
                 <button id="exportBtn" class="header-btn" aria-label="Export conversation" title="Export chat">
                     Export
                 </button>
@@ -211,6 +214,49 @@
             <div class="modal-body" id="modalBody">
                 <h2 id="modalTitle">Source Details</h2>
             </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="modal-content settings-content">
+            <button class="modal-close" aria-label="Close settings">&times;</button>
+
+            <h2 id="settingsTitle">Settings</h2>
+
+            <!-- Product Guides Section -->
+            <section class="settings-section">
+                <h3>Your Product Guides</h3>
+                <p class="settings-hint">Upload PDF manuals for your diabetes devices. These will be searchable alongside the public knowledge base.</p>
+
+                <div class="upload-section-compact" id="pdfUploadSection">
+                    <div class="upload-area-small" id="pdfUploadArea">
+                        <span class="upload-icon-small">📄</span>
+                        <span>Drop PDF here or click to upload</span>
+                        <input type="file" id="pdfFileInput" accept=".pdf" hidden>
+                    </div>
+                    <div id="pdfUploadProgress" class="upload-progress-small" hidden>
+                        <div class="progress-bar-small">
+                            <div class="progress-fill-small" id="pdfProgressFill"></div>
+                        </div>
+                        <span id="pdfUploadStatus">Uploading...</span>
+                    </div>
+                </div>
+
+                <div class="user-sources-list" id="userSourcesList">
+                    <div class="loading">Loading your guides...</div>
+                </div>
+            </section>
+
+            <!-- Public Knowledge Sources Section -->
+            <section class="settings-section">
+                <h3>Public Knowledge Sources</h3>
+                <p class="settings-hint">These sources are maintained by Diabetes Buddy and updated automatically.</p>
+
+                <div class="public-sources-list" id="publicSourcesList">
+                    <div class="loading">Loading sources...</div>
+                </div>
+            </section>
         </div>
     </div>
 

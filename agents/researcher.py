@@ -40,21 +40,11 @@ class ResearcherAgent:
     to avoid re-uploading unchanged files.
     """
 
-    # PDF file paths relative to project root
-    PDF_PATHS = {
-        "theory": "docs/theory/Think-Like-a-Pancreas-A-Practical-Guide-to-Managing-Gary-Scheiner-MS-Cdces-Revised-2025-Hachette-Go-9780306837159-ce3facbbce8e750f2d5875907dcab753-Annas-Archive.pdf",
-        "camaps": "docs/manuals/algorithm/user_manual_fx_mmoll_commercial_ca.pdf",
-        "ypsomed": "docs/manuals/hardware/YPU_eIFU_REF_700009424_UK-en_V01.pdf",
-        "libre": "docs/manuals/hardware/ART41641-001_rev-A-web.pdf",
-    }
+    # Legacy PDF paths removed - now using user-uploaded sources
+    PDF_PATHS = {}
 
-    # Human-readable source names
-    SOURCE_NAMES = {
-        "theory": "Think Like a Pancreas",
-        "camaps": "CamAPS FX User Manual",
-        "ypsomed": "Ypsomed Pump Manual",
-        "libre": "FreeStyle Libre 3 Manual",
-    }
+    # Legacy source names removed - now using user-uploaded sources
+    SOURCE_NAMES = {}
 
     def __init__(self, project_root: Optional[Path] = None):
         """
@@ -255,8 +245,13 @@ class ResearcherAgent:
 
             gemini_file = self.llm.get_file(file_id=file_name)
 
-            # Check if file is still active
-            if gemini_file.state.name == "ACTIVE":
+            # gemini_file may be a FileReference wrapper; get underlying provider object
+            underlying = getattr(gemini_file, "provider_data", gemini_file)
+
+            # Check if file is still active (Gemini SDK object)
+            state = getattr(underlying, "state", None)
+            state_name = getattr(state, "name", None) if state else None
+            if state_name == "ACTIVE":
                 return gemini_file
 
             return None
@@ -267,10 +262,13 @@ class ResearcherAgent:
     def _save_file_cache(self, source_key: str, file_path: Path, gemini_file: Any) -> None:
         """Save file handle info to cache."""
         cache_path = self._get_cache_path(source_key)
+        underlying = getattr(gemini_file, "provider_data", None)
+        file_name = getattr(underlying, "name", None) if underlying is not None else getattr(gemini_file, "file_id", None)
+        display_name = getattr(underlying, "display_name", None) if underlying is not None else getattr(gemini_file, "display_name", None)
         cache_data = {
-            "file_name": gemini_file.name,
+            "file_name": file_name,
             "file_hash": self._get_file_hash(file_path),
-            "display_name": gemini_file.display_name,
+            "display_name": display_name,
         }
         with open(cache_path, "w") as f:
             json.dump(cache_data, f)
@@ -490,58 +488,6 @@ Rules:
             print(f"Error searching {source_key}: {e}")
             return []
 
-    def search_theory(self, query: str) -> list[SearchResult]:
-        """
-        Search Think Like a Pancreas for diabetes management theory.
-
-        Args:
-            query: Search query about diabetes theory, insulin strategies,
-                   carb counting, etc.
-
-        Returns:
-            List of SearchResult objects with exact quotes
-        """
-        return self._search_source("theory", query)
-
-    def search_camaps(self, query: str) -> list[SearchResult]:
-        """
-        Search CamAPS FX manual for hybrid closed-loop algorithm information.
-
-        Args:
-            query: Search query about CamAPS FX settings, algorithm behavior,
-                   boost/ease modes, etc.
-
-        Returns:
-            List of SearchResult objects with exact quotes
-        """
-        return self._search_source("camaps", query)
-
-    def search_ypsomed(self, query: str) -> list[SearchResult]:
-        """
-        Search Ypsomed pump manual for hardware procedures.
-
-        Args:
-            query: Search query about pump operation, cartridge changes,
-                   infusion sets, troubleshooting, etc.
-
-        Returns:
-            List of SearchResult objects with exact quotes
-        """
-        return self._search_source("ypsomed", query)
-
-    def search_libre(self, query: str) -> list[SearchResult]:
-        """
-        Search FreeStyle Libre 3 manual for CGM information.
-
-        Args:
-            query: Search query about sensor application, readings,
-                   alarms, troubleshooting, etc.
-
-        Returns:
-            List of SearchResult objects with exact quotes
-        """
-        return self._search_source("libre", query)
-
     def search_all(self, query: str) -> dict[str, list[SearchResult]]:
         """
         Search all knowledge sources for relevant information.
@@ -552,12 +498,8 @@ Rules:
         Returns:
             Dictionary mapping source names to their results
         """
-        return {
-            "theory": self.search_theory(query),
-            "camaps": self.search_camaps(query),
-            "ypsomed": self.search_ypsomed(query),
-            "libre": self.search_libre(query),
-        }
+        # Legacy search_all - no hardcoded sources
+        return {}
 
     def search_multiple(self, query: str, sources: list[str]) -> dict[str, list[SearchResult]]:
         """
@@ -565,38 +507,13 @@ Rules:
 
         Args:
             query: Search query
-            sources: List of source keys to search (e.g., ['theory', 'camaps'])
+            sources: List of source keys to search
 
         Returns:
             Dictionary mapping source names to their results
         """
-        results = {}
-        
-        # Map source keys to search functions
-        search_map = {
-            "theory": self.search_theory,
-            "camaps": self.search_camaps,
-            "ypsomed": self.search_ypsomed,
-            "libre": self.search_libre,
-        }
-        
-        # Execute searches in parallel
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            future_to_source = {
-                executor.submit(search_map[source], query): source
-                for source in sources
-                if source in search_map
-            }
-            
-            for future in as_completed(future_to_source):
-                source = future_to_source[future]
-                try:
-                    results[source] = future.result()
-                except Exception as e:
-                    print(f"Error searching {source}: {e}")
-                    results[source] = []
-        
-        return results
+        # Legacy search_multiple - no hardcoded sources
+        return {}
 
     def format_results(self, results: list[SearchResult]) -> str:
         """Format search results as readable text."""

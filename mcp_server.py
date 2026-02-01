@@ -55,9 +55,7 @@ async def list_tools() -> list[Tool]:
             name="diabetes_query",
             description=(
                 "Ask a question about diabetes management. "
-                "Searches authoritative knowledge sources (Think Like a Pancreas, "
-                "CamAPS FX manual, Ypsomed pump manual, FreeStyle Libre 3 manual) "
-                "and returns a safe, audited answer with source citations. "
+                "Searches authoritative knowledge sources and returns a safe, audited answer with source citations. "
                 "Automatically blocks harmful advice and includes medical disclaimers."
             ),
             inputSchema={
@@ -69,78 +67,6 @@ async def list_tools() -> list[Tool]:
                     }
                 },
                 "required": ["question"]
-            }
-        ),
-        Tool(
-            name="search_theory",
-            description=(
-                "Search 'Think Like a Pancreas' for diabetes management theory, "
-                "insulin strategies, carb counting, and behavioral guidance. "
-                "Returns exact quotes with page numbers."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query for diabetes theory and strategies"
-                    }
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="search_camaps",
-            description=(
-                "Search CamAPS FX User Manual for hybrid closed-loop algorithm "
-                "information, Boost/Ease-off modes, target settings, and auto-mode behavior. "
-                "Returns exact quotes with page numbers."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query for CamAPS FX algorithm features"
-                    }
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="search_ypsomed",
-            description=(
-                "Search Ypsomed/mylife Pump Manual for hardware operation, "
-                "cartridge changes, infusion sets, priming, and troubleshooting. "
-                "Returns exact quotes with page numbers."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query for Ypsomed pump hardware procedures"
-                    }
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="search_libre",
-            description=(
-                "Search FreeStyle Libre 3 Manual for CGM sensor information, "
-                "sensor application, readings, alarms, and troubleshooting. "
-                "Returns exact quotes with page numbers."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query for Libre 3 CGM features"
-                    }
-                },
-                "required": ["query"]
             }
         ),
         Tool(
@@ -200,56 +126,39 @@ async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageCo
             
             return [TextContent(type="text", text="\n".join(output))]
         
-        elif name == "search_theory":
-            query = arguments.get("query", "")
-            if not query:
-                return [TextContent(type="text", text="Error: No query provided")]
-            
-            results = triage_agent.researcher.search_theory(query)
-            return [TextContent(type="text", text=_format_search_results(results, "Think Like a Pancreas"))]
-        
-        elif name == "search_camaps":
-            query = arguments.get("query", "")
-            if not query:
-                return [TextContent(type="text", text="Error: No query provided")]
-            
-            results = triage_agent.researcher.search_camaps(query)
-            return [TextContent(type="text", text=_format_search_results(results, "CamAPS FX User Manual"))]
-        
-        elif name == "search_ypsomed":
-            query = arguments.get("query", "")
-            if not query:
-                return [TextContent(type="text", text="Error: No query provided")]
-            
-            results = triage_agent.researcher.search_ypsomed(query)
-            return [TextContent(type="text", text=_format_search_results(results, "Ypsomed Pump Manual"))]
-        
-        elif name == "search_libre":
-            query = arguments.get("query", "")
-            if not query:
-                return [TextContent(type="text", text="Error: No query provided")]
-            
-            results = triage_agent.researcher.search_libre(query)
-            return [TextContent(type="text", text=_format_search_results(results, "FreeStyle Libre 3 Manual"))]
-        
         elif name == "get_knowledge_sources":
-            sources = [
-                ("**Theory**", "Think Like a Pancreas", 
-                 "Diabetes management concepts, insulin strategies, carb counting, blood sugar patterns"),
-                ("**Algorithm**", "CamAPS FX User Manual", 
-                 "Hybrid closed-loop settings, Boost/Ease modes, auto-mode behavior"),
-                ("**Hardware**", "Ypsomed Pump Manual", 
-                 "Pump operation, cartridge changes, infusion sets, troubleshooting"),
-                ("**CGM**", "FreeStyle Libre 3 Manual", 
-                 "Sensor application, readings, alarms, troubleshooting"),
-            ]
-            
-            output = ["# Knowledge Sources\n"]
-            for category, name, description in sources:
-                output.append(f"{category}: **{name}**")
-                output.append(f"  - {description}\n")
-            
-            return [TextContent(type="text", text="\n".join(output))]
+            # Get dynamic list from ChromaDB
+            try:
+                stats = triage_agent.researcher.backend.get_collection_stats()
+                output = ["# Knowledge Sources\n"]
+
+                public_sources = [
+                    ("ada_standards", "ADA Standards of Care", "Evidence-based clinical guidelines"),
+                    ("australian_guidelines", "Australian Diabetes Guidelines", "Technology recommendations"),
+                    ("openaps_docs", "OpenAPS Documentation", "DIY closed-loop algorithms"),
+                    ("loop_docs", "Loop Documentation", "iOS closed-loop system"),
+                    ("androidaps_docs", "AndroidAPS Documentation", "Android closed-loop system"),
+                    ("wikipedia_education", "Wikipedia T1D Education", "Educational content"),
+                    ("research_papers", "PubMed Research Papers", "Peer-reviewed research"),
+                ]
+
+                output.append("## Public Knowledge Sources\n")
+                for key, name, desc in public_sources:
+                    count = stats.get(key, {}).get('count', 0)
+                    output.append(f"- **{name}**: {desc} ({count} chunks)\n")
+
+                # Add user sources
+                user_sources = [k for k in stats.keys() if k.startswith('user_')]
+                if user_sources:
+                    output.append("\n## Your Product Guides\n")
+                    for key in user_sources:
+                        count = stats.get(key, {}).get('count', 0)
+                        name = key.replace('user_', '').replace('_', ' ').title()
+                        output.append(f"- **{name}** ({count} chunks)\n")
+
+                return [TextContent(type="text", text="\n".join(output))]
+            except Exception as e:
+                return [TextContent(type="text", text=f"Error loading sources: {e}")]
         
         else:
             return [TextContent(type="text", text=f"Error: Unknown tool '{name}'")]

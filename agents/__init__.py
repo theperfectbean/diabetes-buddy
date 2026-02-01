@@ -7,6 +7,7 @@ from .researcher import ResearcherAgent, SearchResult
 from .triage import TriageAgent, TriageResponse, Classification, QueryCategory
 from .safety import SafetyAuditor, SafeResponse, AuditResult, SafetyFinding, Severity
 from .glooko_query import GlookoQueryAgent, QueryIntent, QueryResult
+from .unified_agent import UnifiedAgent, UnifiedResponse
 from .data_ingestion import (
     GlookoAnalyzer,
     GlookoParser,
@@ -44,6 +45,9 @@ __all__ = [
     "GlookoQueryAgent",
     "QueryIntent",
     "QueryResult",
+    # Unified Agent
+    "UnifiedAgent",
+    "UnifiedResponse",
     # Data Ingestion
     "GlookoAnalyzer",
     "GlookoParser",

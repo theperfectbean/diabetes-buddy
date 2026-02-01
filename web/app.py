@@ -11,6 +11,7 @@ import shutil
 import sys
 import zipfile
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -34,7 +35,9 @@ logger = logging.getLogger(__name__)
 
 from agents import TriageAgent, SafetyAuditor, Severity, QueryCategory
 from agents import GlookoAnalyzer, GlookoQueryAgent, generate_research_queries
+from agents import UnifiedAgent
 from agents.glucose_units import GLUCOSE_UNIT, convert_to_configured_unit
+from agents.source_manager import UserSourceManager
 
 
 # Rate limiter implementation
@@ -64,18 +67,34 @@ class RateLimiter:
 # Initialize rate limiter
 rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler for startup/shutdown."""
+
+    # Startup
+    logger.info("Starting Diabetes Buddy API...")
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down Diabetes Buddy API...")
+    logger.info("Shutdown complete")
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Diabetes Buddy API",
+    lifespan=lifespan,
     description="""
 AI-powered diabetes management assistant.
 
 ## Features
 - Natural language query processing
-- Multi-source knowledge retrieval (Think Like a Pancreas, CamAPS FX, Ypsomed, Libre 3, ADA Standards 2026, Australian Guidelines)
+- Multi-source knowledge retrieval (Public medical guidelines + User-uploaded device manuals)
 - Clinical guideline citations for evidence-based recommendations
 - Safety auditing with dose detection
 - Severity-based response classification
+- Product-agnostic device support via PDF upload
 
 ## Rate Limits
 - 10 requests per minute per IP address
@@ -105,6 +124,7 @@ try:
     triage_agent = TriageAgent()
     safety_auditor = SafetyAuditor()
     glooko_query_agent = GlookoQueryAgent()
+    unified_agent = UnifiedAgent()
     logger.info("Agents initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize agents: {e}")
@@ -178,6 +198,15 @@ class GlookoAnalysisResponse(BaseModel):
     patterns: list[dict]
     research_queries: list[dict]
     warnings: list[str]
+
+
+class SourceUploadResponse(BaseModel):
+    """Response model for source upload."""
+    success: bool
+    filename: str
+    display_name: str
+    collection_key: str
+    message: str
 
 
 # Routes
@@ -295,6 +324,72 @@ async def query(request: Request, query_request: QueryRequest) -> QueryResponse:
         raise HTTPException(status_code=500, detail="An error occurred while processing your question. Please try again.")
 
 
+@app.post("/api/query/unified", responses={
+    200: {"description": "Successful query response"},
+    429: {"description": "Rate limit exceeded"},
+    500: {"description": "Internal server error"}
+})
+async def query_unified(request: Request, query_request: QueryRequest) -> QueryResponse:
+    """
+    Process a query using the unified agent (no routing).
+
+    Every query gets both user's Glooko data and knowledge base results.
+    The LLM decides what's relevant - no classification step.
+    """
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not await rate_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    try:
+        logger.info(f"Processing unified query: {query_request.query[:50]}...")
+
+        # Process through unified agent
+        response = unified_agent.process(query_request.query)
+
+        if not response.success:
+            raise HTTPException(status_code=500, detail=response.answer)
+
+        # Apply safety auditing
+        safety_result = safety_auditor.audit_text(
+            text=response.answer,
+            query=query_request.query
+        )
+
+        # Build sources list
+        sources = []
+        if "glooko" in response.sources_used:
+            sources.append({
+                "source": "Your Glooko Data",
+                "page": None,
+                "excerpt": "Personal diabetes data from your uploaded export",
+                "confidence": 1.0
+            })
+        if "knowledge_base" in response.sources_used:
+            sources.append({
+                "source": "Knowledge Base",
+                "page": None,
+                "excerpt": "Information from diabetes management guides and clinical guidelines",
+                "confidence": 0.9
+            })
+
+        return QueryResponse(
+            query=query_request.query,
+            classification="unified",  # No classification needed
+            confidence=1.0,
+            severity=safety_result.max_severity.name,
+            answer=safety_result.safe_response,
+            sources=sources,
+            disclaimer=response.disclaimer or "Always consult your healthcare provider."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in unified query: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred processing your question.")
+
+
 @app.get("/api/sources")
 async def get_sources():
     """Get list of available knowledge sources."""
@@ -306,35 +401,34 @@ async def get_sources():
                 "description": "Your personal diabetes data from Glooko exports"
             },
             {
-                "name": "Think Like a Pancreas",
-                "author": "Gary Scheiner",
-                "type": "theory",
-                "description": "Diabetes management concepts and strategies"
+                "name": "OpenAPS Documentation",
+                "type": "openaps_docs",
+                "description": "OpenAPS documentation (258 chunks)"
             },
             {
-                "name": "CamAPS FX User Manual",
-                "type": "camaps",
-                "description": "Closed-loop algorithm settings and modes"
+                "name": "Loop Documentation",
+                "type": "loop_docs",
+                "description": "Loop documentation (393 chunks)"
             },
             {
-                "name": "Ypsomed Pump Manual",
-                "type": "ypsomed",
-                "description": "Pump hardware and operation"
+                "name": "AndroidAPS Documentation",
+                "type": "androidaps_docs",
+                "description": "AndroidAPS documentation (384 chunks)"
             },
             {
-                "name": "FreeStyle Libre 3 Manual",
-                "type": "libre",
-                "description": "CGM sensor and glucose readings"
+                "name": "PubMed Research Papers",
+                "type": "pubmed_papers",
+                "description": "PubMed research papers (39 chunks)"
             },
             {
-                "name": "ADA Standards of Care 2026",
+                "name": "Device Manuals",
+                "type": "device_manuals",
+                "description": "CamAPS FX, Ypsomed, Libre 3 manuals"
+            },
+            {
+                "name": "Clinical Guidelines",
                 "type": "clinical_guidelines",
-                "description": "Evidence-based treatment targets, glycemic goals, and complication management"
-            },
-            {
-                "name": "Australian Diabetes Guidelines",
-                "type": "clinical_guidelines",
-                "description": "Technology recommendations for CGM, pumps, and hybrid closed-loop systems"
+                "description": "ADA Standards of Care 2026, Australian Diabetes Guidelines"
             }
         ]
     }
@@ -669,166 +763,157 @@ async def get_analysis_by_id(analysis_id: str):
 # Knowledge Base Management Endpoints
 # ============================================================================
 
-from agents.knowledge_fetcher import KnowledgeFetcher
+# Initialize user source manager
+user_source_manager = UserSourceManager()
 
-# Initialize knowledge fetcher
-knowledge_fetcher = KnowledgeFetcher()
-
-
-class DeviceSetupRequest(BaseModel):
-    """Request model for device setup."""
-    pump_id: str = Field(..., description="Pump device ID from registry")
-    cgm_id: str = Field(..., description="CGM device ID from registry")
+# Max upload size (50MB)
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 
 
-@app.get("/api/knowledge/registry")
-async def get_device_registry():
-    """Get the complete device registry for setup UI."""
-    try:
-        registry_path = Path(__file__).parent.parent / "config" / "device_registry.json"
-        with open(registry_path, 'r') as f:
-            registry = json.load(f)
-        
-        # Format for UI display
-        return {
-            "pumps": {
-                key: {
-                    "id": key,
-                    "name": info["name"],
-                    "manufacturer": info["manufacturer"]
-                }
-                for key, info in registry.get("insulin_pumps", {}).items()
-            },
-            "cgms": {
-                key: {
-                    "id": key,
-                    "name": info["name"],
-                    "manufacturer": info["manufacturer"]
-                }
-                for key, info in registry.get("cgm_devices", {}).items()
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error loading device registry: {e}")
-        raise HTTPException(status_code=500, detail="Failed to load device registry")
+# ============================================================================
+# User Sources API
+# ============================================================================
 
-
-@app.post("/api/knowledge/setup")
-async def setup_knowledge_base(setup_request: DeviceSetupRequest):
+@app.post("/api/sources/upload", response_model=SourceUploadResponse)
+async def upload_source(request: Request, file: UploadFile = File(...)):
     """
-    Initial setup: Select devices and fetch all knowledge sources.
-    This is the primary onboarding endpoint.
+    Upload a PDF to the user's source library.
+
+    Accepts PDF files up to 50MB, validates, stores, and triggers indexing.
     """
-    try:
-        logger.info(f"Starting knowledge base setup: {setup_request.pump_id} + {setup_request.cgm_id}")
-        
-        # Run setup (this fetches all sources)
-        results = knowledge_fetcher.setup_user_devices(
-            pump_id=setup_request.pump_id,
-            cgm_id=setup_request.cgm_id
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not await rate_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    # Validate file type
+    if not file.filename or not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    # Read file and check size
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024*1024)}MB"
         )
-        
-        # Count successes and failures
-        successes = sum(1 for r in results.values() if r.get('success'))
-        failures = sum(1 for r in results.values() if not r.get('success'))
-        
-        return {
-            "success": failures == 0,
-            "message": f"Knowledge base setup completed. {successes} sources fetched successfully.",
-            "results": results,
-            "profile": knowledge_fetcher.get_user_profile()
-        }
-        
-    except Exception as e:
-        logger.error(f"Knowledge base setup failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Setup failed: {str(e)}")
 
+    # Validate PDF magic bytes
+    if not content.startswith(b'%PDF'):
+        raise HTTPException(status_code=400, detail="Invalid PDF file")
 
-@app.get("/api/knowledge/status")
-async def get_knowledge_status():
-    """Get status of all configured knowledge sources."""
     try:
-        statuses = knowledge_fetcher.get_all_sources_status()
-        profile = knowledge_fetcher.get_user_profile()
-        
-        return {
-            "sources": statuses,
-            "profile": profile,
-            "last_check": profile.get("last_update_check"),
-            "auto_update_enabled": profile.get("auto_update_enabled", True)
-        }
-    except Exception as e:
-        logger.error(f"Error getting knowledge status: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get knowledge status")
+        # Add to user sources
+        source = user_source_manager.add_source(file.filename, content)
 
+        # Trigger indexing
+        try:
+            from agents.researcher_chromadb import ChromaDBBackend
+            backend = ChromaDBBackend()
+            backend.refresh_user_sources()
+        except Exception as e:
+            logger.warning(f"Indexing failed (will retry on next query): {e}")
 
-@app.post("/api/knowledge/check-updates")
-async def check_for_updates():
-    """Manually trigger update check for all sources."""
-    try:
-        logger.info("Manual update check triggered")
-        updates = knowledge_fetcher.check_for_updates()
-        
-        # Count updates found
-        updates_available = sum(1 for r in updates.values() if r.get('update_available'))
-        
-        return {
-            "success": True,
-            "updates_found": updates_available,
-            "details": updates
-        }
-    except Exception as e:
-        logger.error(f"Update check failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Update check failed: {str(e)}")
-
-
-class DeviceUpdateRequest(BaseModel):
-    """Request model for changing devices."""
-    device_type: str = Field(..., description="'pump' or 'cgm'")
-    device_id: str = Field(..., description="New device ID from registry")
-
-
-@app.post("/api/knowledge/update-device")
-async def update_device(update_request: DeviceUpdateRequest):
-    """Change pump or CGM and fetch new manual."""
-    try:
-        result = knowledge_fetcher.update_device(
-            device_type=update_request.device_type,
-            device_id=update_request.device_id
+        return SourceUploadResponse(
+            success=True,
+            filename=source.filename,
+            display_name=source.display_name,
+            collection_key=source.collection_key,
+            message="PDF uploaded and indexed successfully"
         )
-        
-        return {
-            "success": result.get('success', False),
-            "message": f"Device updated to {update_request.device_id}",
-            "result": result
-        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Device update failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Device update failed: {str(e)}")
+        logger.error(f"Upload failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Upload failed")
 
 
-@app.get("/api/knowledge/notifications")
-async def get_notifications():
-    """Get recent update notifications."""
+@app.get("/api/sources/list")
+async def list_sources():
+    """
+    List all knowledge sources (public + user).
+
+    Returns dict with 'user_sources' and 'public_sources' arrays.
+    """
+    # Get user sources
+    user_sources = user_source_manager.list_sources()
+
+    # Get public sources from researcher
     try:
-        notifications_file = Path(__file__).parent.parent / "data" / "notifications.json"
-        if not notifications_file.exists():
-            return {"notifications": []}
-        
-        with open(notifications_file, 'r') as f:
-            notifications = json.load(f)
-        
-        # Return only unread or recent (last 30 days)
-        cutoff = datetime.now() - timedelta(days=30)
-        recent = [
-            n for n in notifications
-            if not n.get('read') or datetime.fromisoformat(n['timestamp']) > cutoff
+        from agents.researcher_chromadb import ChromaDBBackend
+        backend = ChromaDBBackend()
+        stats = backend.get_collection_stats()
+
+        public_collections = [
+            ('ada_standards', 'ADA Standards of Care'),
+            ('australian_guidelines', 'Australian Diabetes Guidelines'),
+            ('openaps_docs', 'OpenAPS Documentation'),
+            ('loop_docs', 'Loop Documentation'),
+            ('androidaps_docs', 'AndroidAPS Documentation'),
+            ('wikipedia_education', 'Wikipedia T1D Education'),
+            ('research_papers', 'PubMed Research Papers'),
         ]
-        
-        return {"notifications": recent}
+
+        public_sources = []
+        for key, name in public_collections:
+            if key in stats:
+                public_sources.append({
+                    'key': key,
+                    'name': name,
+                    'chunk_count': stats[key].get('count', 0),
+                    'status': 'current'
+                })
     except Exception as e:
-        logger.error(f"Error loading notifications: {e}")
-        return {"notifications": []}
+        logger.error(f"Error loading public sources: {e}")
+        public_sources = []
+
+    return {
+        'user_sources': [
+            {
+                'filename': s.filename,
+                'display_name': s.display_name,
+                'collection_key': s.collection_key,
+                'uploaded_at': s.uploaded_at,
+                'indexed': s.indexed,
+                'chunk_count': s.chunk_count
+            }
+            for s in user_sources
+        ],
+        'public_sources': public_sources
+    }
+
+
+@app.delete("/api/sources/{filename}")
+async def delete_source(request: Request, filename: str):
+    """
+    Delete a user-uploaded source.
+    """
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not await rate_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    # Get source before deleting (for collection key)
+    source = user_source_manager.get_source_by_filename(filename)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    # Delete from ChromaDB
+    try:
+        from agents.researcher_chromadb import ChromaDBBackend
+        backend = ChromaDBBackend()
+        backend.delete_user_source_collection(source.collection_key)
+    except Exception as e:
+        logger.warning(f"Could not delete ChromaDB collection: {e}")
+
+    # Delete file and metadata
+    deleted = user_source_manager.delete_source(filename)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    return {"success": True, "message": f"Deleted {filename}"}
 
 
 # Mount static files
@@ -838,15 +923,12 @@ if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-@app.get("/setup")
-async def setup_page():
-    """Serve the knowledge base setup page."""
-    setup_html = web_dir / "setup.html"
-    if setup_html.exists():
-        return FileResponse(setup_html)
-    raise HTTPException(status_code=404, detail="Setup page not found")
-
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "web.app:app",  # Import string, not app object
+        host="0.0.0.0",
+        port=8001,  # Changed from 8000 to 8001
+        reload=False,  # Disable reload in production
+        log_level="info"
+    )

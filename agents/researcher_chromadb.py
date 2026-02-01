@@ -5,6 +5,9 @@ Fast local vector search replacing slow Gemini File API calls.
 One-time PDF processing (~3min), then <5s queries forever.
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Force IPv4 before any Google API imports
 from . import network  # noqa: F401
 
@@ -35,39 +38,31 @@ class SearchResult:
 class ChromaDBBackend:
     """
     ChromaDB-based research backend with local vector search.
-    
+
     Processes PDFs once, stores embeddings locally, then performs
     fast semantic search without repeated Gemini API calls.
+
+    PDFs are auto-discovered by scanning configured directories.
     """
 
-    # PDF file paths relative to project root
-    PDF_PATHS = {
-        "theory": "docs/theory/Think-Like-a-Pancreas-A-Practical-Guide-to-Managing-Gary-Scheiner-MS-Cdces-Revised-2025-Hachette-Go-9780306837159-ce3facbbce8e750f2d5875907dcab753-Annas-Archive.pdf",
-        "camaps": "docs/manuals/algorithm/user_manual_fx_mmoll_commercial_ca.pdf",
-        "ypsomed": "docs/manuals/hardware/YPU_eIFU_REF_700009424_UK-en_V01.pdf",
-        "libre": "docs/manuals/hardware/ART41641-001_rev-A-web.pdf",
-        "ada_standards": "docs/theory/ADA-Standards-of-Care-2026.pdf",
-        "australian_guidelines": "docs/theory/Australian-Diabetes-Guidelines.pdf",
-    }
-
-    # Human-readable source names
-    SOURCE_NAMES = {
-        "theory": "Think Like a Pancreas",
-        "camaps": "CamAPS FX User Manual",
-        "ypsomed": "Ypsomed Pump Manual",
-        "libre": "FreeStyle Libre 3 Manual",
-        "ada_standards": "ADA Standards of Care 2026",
-        "australian_guidelines": "Australian Diabetes Guidelines",
+    # Directories to scan for PDFs (relative to project root)
+    # Format: {directory: trust_level}
+    PDF_DIRECTORIES = {
+        "docs/manuals/algorithm": 0.85,    # Algorithm documentation (high trust)
+        "docs/manuals/hardware": 0.85,     # Hardware manuals (high trust)
+        "docs/theory": 0.8,                # Theory/guidelines
+        "docs/knowledge-sources": 0.8,     # Structured knowledge sources
+        "docs/user-sources": 0.9,          # User-uploaded sources (high trust)
     }
 
     # Chunking parameters
     CHUNK_SIZE = 500  # words
     CHUNK_OVERLAP = 100  # words
-    
+
     def __init__(self, project_root: Optional[Path] = None):
         """
         Initialize ChromaDB backend.
-        
+
         Args:
             project_root: Path to project root directory
         """
@@ -78,41 +73,86 @@ class ChromaDBBackend:
             self.embedding_model = getattr(self.llm, "embedding_model", None) or (self.llm.get_model_info().model_name if hasattr(self.llm, 'get_model_info') else None)
         except Exception:
             self.embedding_model = None
-        
+
         # Set project root
         if project_root is None:
             project_root = Path(__file__).parent.parent
         self.project_root = Path(project_root)
-        
+
         # Initialize ChromaDB
         self.db_path = self.project_root / ".cache" / "chromadb"
         self.db_path.mkdir(parents=True, exist_ok=True)
-        
+
         self.chroma_client = chromadb.PersistentClient(
             path=str(self.db_path),
             settings=Settings(anonymized_telemetry=False)
         )
-        
+
+        # Discover PDFs and build path/name mappings
+        self.pdf_paths = {}      # source_key -> relative path
+        self.source_names = {}   # source_key -> human-readable name
+        self.source_trust = {}   # source_key -> trust level
+        self._discover_pdfs()
+
         # Initialize collections (creates if needed)
         self._init_collections()
-    
+
+    def _pdf_to_source_key(self, pdf_path: Path) -> str:
+        """Generate a collection-safe source key from PDF path."""
+        # Use stem (filename without extension), lowercase, replace spaces/special chars
+        name = pdf_path.stem.lower()
+        # Replace problematic characters with underscores
+        for char in [' ', '-', '.', '(', ')', '[', ']', ',']:
+            name = name.replace(char, '_')
+        # Remove consecutive underscores and trim
+        while '__' in name:
+            name = name.replace('__', '_')
+        return name.strip('_')[:63]  # ChromaDB collection name limit
+
+    def _pdf_to_display_name(self, pdf_path: Path) -> str:
+        """Generate a human-readable name from PDF filename."""
+        name = pdf_path.stem
+        # Replace underscores and hyphens with spaces
+        name = name.replace('_', ' ').replace('-', ' ')
+        # Title case
+        return name.title()
+
+    def _discover_pdfs(self):
+        """Scan configured directories for PDFs."""
+        for dir_path, trust_level in self.PDF_DIRECTORIES.items():
+            full_dir = self.project_root / dir_path
+            if not full_dir.exists():
+                continue
+
+            # Recursively find all PDFs in this directory
+            for pdf_path in full_dir.rglob("*.pdf"):
+                source_key = self._pdf_to_source_key(pdf_path)
+
+                # Handle duplicate keys by appending parent dir
+                if source_key in self.pdf_paths:
+                    parent = pdf_path.parent.name
+                    source_key = f"{parent}_{source_key}"[:63]
+
+                rel_path = pdf_path.relative_to(self.project_root)
+                self.pdf_paths[source_key] = str(rel_path)
+                self.source_names[source_key] = self._pdf_to_display_name(pdf_path)
+                self.source_trust[source_key] = trust_level
+
     def _init_collections(self):
-        """Initialize or load ChromaDB collections for each source."""
-        for source_key in self.PDF_PATHS.keys():
+        """Initialize or load ChromaDB collections for discovered PDFs."""
+        for source_key, rel_path in self.pdf_paths.items():
             collection = self.chroma_client.get_or_create_collection(
                 name=source_key,
                 metadata={"hnsw:space": "cosine"}
             )
-            
+
             # Check if collection is empty (needs processing)
             if collection.count() == 0:
-                pdf_path = self.project_root / self.PDF_PATHS[source_key]
+                pdf_path = self.project_root / rel_path
                 if pdf_path.exists():
-                    print(f"🔧 Processing {self.SOURCE_NAMES[source_key]} for first time...")
+                    print(f"🔧 Processing {self.source_names[source_key]} for first time...")
                     self._process_pdf(source_key, pdf_path, collection)
-                    print(f"✅ {self.SOURCE_NAMES[source_key]} ready!")
-                else:
-                    print(f"⚠️  Warning: PDF not found: {pdf_path}")
+                    print(f"✅ {self.source_names[source_key]} ready!")
     
     def _extract_text_from_pdf(self, pdf_path: Path) -> List[tuple[str, int]]:
         """
@@ -241,7 +281,7 @@ class ChromaDBBackend:
         metadatas = [
             {
                 "source": source_key,
-                "source_name": self.SOURCE_NAMES[source_key],
+                "source_name": self.source_names.get(source_key, source_key),
                 "page": chunk[1],
                 "chunk_id": i
             }
@@ -304,12 +344,13 @@ class ChromaDBBackend:
                 # Distance is 0-2 for cosine, convert to 0-1 confidence
                 confidence = 1.0 - (distance / 2.0)
                 
+                source_name = self.source_names.get(source_key, source_key)
                 search_results.append(SearchResult(
                     quote=doc,
                     page_number=metadata.get('page'),
                     confidence=confidence,
-                    source=self.SOURCE_NAMES[source_key],
-                    context=f"Retrieved from {self.SOURCE_NAMES[source_key]}"
+                    source=source_name,
+                    context=f"Retrieved from {source_name}"
                 ))
         
         return search_results
@@ -367,29 +408,69 @@ Your answer:"""
                 for chunk in chunks
             ])
     
-    def search_theory(self, query: str, top_k: int = 5) -> List[SearchResult]:
-        """Search Think Like a Pancreas."""
-        chunks = self._search_collection("theory", query, top_k)
-        return chunks
-    
-    def search_camaps(self, query: str, top_k: int = 5) -> List[SearchResult]:
-        """Search CamAPS FX manual."""
-        chunks = self._search_collection("camaps", query, top_k)
-        return chunks
-    
-    def search_ypsomed(self, query: str, top_k: int = 5) -> List[SearchResult]:
-        """Search Ypsomed pump manual."""
-        chunks = self._search_collection("ypsomed", query, top_k)
-        return chunks
-    
-    def search_libre(self, query: str, top_k: int = 5) -> List[SearchResult]:
-        """Search FreeStyle Libre 3 manual."""
-        chunks = self._search_collection("libre", query, top_k)
-        return chunks
+    def search_pdf_collection(self, source_key: str, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search any discovered PDF collection by its source key.
+
+        Args:
+            source_key: The collection key (use list_pdf_collections() to see available keys)
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects
+        """
+        if source_key not in self.pdf_paths:
+            return []
+        return self._search_collection(source_key, query, top_k)
+
+    def search_all_pdfs(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search all discovered PDF collections and merge results.
+
+        Args:
+            query: Search query
+            top_k: Number of results per collection
+
+        Returns:
+            List of SearchResult objects sorted by confidence
+        """
+        all_results = []
+        for source_key in self.pdf_paths.keys():
+            try:
+                results = self._search_collection(source_key, query, top_k)
+                # Apply source trust weighting
+                trust = self.source_trust.get(source_key, 0.7)
+                for r in results:
+                    r.confidence = r.confidence * trust
+                all_results.extend(results)
+            except Exception:
+                pass
+        all_results.sort(key=lambda x: x.confidence, reverse=True)
+        return all_results[:top_k * 2]  # Return more results from combined search
+
+    def list_pdf_collections(self) -> dict:
+        """
+        List all discovered PDF collections.
+
+        Returns:
+            Dict mapping source_key to {path, name, trust}
+        """
+        return {
+            key: {
+                "path": self.pdf_paths[key],
+                "name": self.source_names[key],
+                "trust": self.source_trust[key]
+            }
+            for key in self.pdf_paths
+        }
 
     def search_ada_standards(self, query: str, sections: List[str] = None, top_k: int = 5) -> List[SearchResult]:
         """
-        Search ADA Standards of Care 2026.
+        Search ADA Standards of Care (highest trust source).
+
+        The ADA Standards of Care represent authoritative clinical practice guidelines
+        and are assigned the highest trust level (1.0) in search rankings.
 
         Args:
             query: Search query
@@ -402,8 +483,17 @@ Your answer:"""
             top_k: Number of results to return
 
         Returns:
-            List of SearchResult objects
+            List of SearchResult objects with confidence=1.0 (highest trust)
         """
+        try:
+            collection = self.chroma_client.get_collection(name="ada_standards")
+        except Exception:
+            # Collection doesn't exist yet (not ingested)
+            return []
+
+        if collection.count() == 0:
+            return []
+
         # Enhance query with section context if specified
         if sections:
             section_context = f" (focusing on Sections {', '.join(sections)})"
@@ -411,8 +501,42 @@ Your answer:"""
         else:
             enhanced_query = query
 
-        chunks = self._search_collection("ada_standards", enhanced_query, top_k)
-        return chunks
+        # Search ChromaDB
+        try:
+            results = collection.query(
+                query_texts=[enhanced_query],
+                n_results=min(top_k, collection.count())
+            )
+        except Exception as e:
+            print(f"Error querying ada_standards collection: {e}")
+            return []
+
+        # Convert to SearchResult objects with highest trust (1.0)
+        search_results = []
+        if results['documents'] and results['documents'][0]:
+            for i, doc in enumerate(results['documents'][0]):
+                metadata = results['metadatas'][0][i]
+                distance = results['distances'][0][i] if results['distances'] else 0.5
+
+                # ADA Standards get highest trust (1.0) - authoritative clinical guidelines
+                source_trust = 1.0
+                query_relevance = 1.0 - (distance / 2.0)
+                confidence = query_relevance * source_trust
+
+                # Build rich source info from metadata
+                section = metadata.get('section', '?')
+                section_topic = metadata.get('section_topic', 'General')
+                year = metadata.get('year', 2025)
+
+                search_results.append(SearchResult(
+                    quote=doc,
+                    page_number=None,
+                    confidence=confidence,
+                    source=f"ADA Standards of Care {year}",
+                    context=f"Section {section}: {section_topic}"
+                ))
+
+        return search_results
 
     def search(self, query: str, top_k: int = 5) -> dict:
         """
@@ -421,7 +545,7 @@ Your answer:"""
         Returns a mapping of source_key -> list[SearchResult].
         """
         results = {}
-        for source_key in self.PDF_PATHS.keys():
+        for source_key in self.pdf_paths.keys():
             method_name = f"search_{source_key}"
             if hasattr(self, method_name):
                 try:
@@ -488,7 +612,7 @@ Your answer:"""
             List of SearchResult objects from research papers
         """
         try:
-            collection = self.chroma_client.get_collection(name="pubmed_research")
+            collection = self.chroma_client.get_collection(name="research_papers")
         except Exception:
             # Collection doesn't exist yet (no papers ingested)
             return []
@@ -496,17 +620,10 @@ Your answer:"""
         if collection.count() == 0:
             return []
 
-        # Embed query
-        try:
-            query_embedding = self.llm.embed_text(query)
-        except Exception as e:
-            print(f"Error embedding query: {e}")
-            return []
-
         # Search ChromaDB
         try:
             results = collection.query(
-                query_embeddings=[query_embedding],
+                query_texts=[query],
                 n_results=min(top_k, collection.count())
             )
         except Exception as e:
@@ -520,8 +637,10 @@ Your answer:"""
                 metadata = results['metadatas'][0][i]
                 distance = results['distances'][0][i] if results['distances'] else 0.5
 
-                # Convert distance to confidence
-                confidence = 1.0 - (distance / 2.0)
+                # Use distance-based confidence scaled by source trustworthiness (0.7)
+                source_trust = 0.7
+                query_relevance = 1.0 - (distance / 2.0)
+                confidence = query_relevance * source_trust
 
                 search_results.append(SearchResult(
                     quote=doc,
@@ -553,17 +672,10 @@ Your answer:"""
         if collection.count() == 0:
             return []
 
-        # Embed query
-        try:
-            query_embedding = self.llm.embed_text(query)
-        except Exception as e:
-            print(f"Error embedding query: {e}")
-            return []
-
         # Search ChromaDB
         try:
             results = collection.query(
-                query_embeddings=[query_embedding],
+                query_texts=[query],
                 n_results=min(top_k, collection.count())
             )
         except Exception as e:
@@ -577,8 +689,11 @@ Your answer:"""
                 metadata = results['metadatas'][0][i]
                 distance = results['distances'][0][i] if results['distances'] else 0.5
 
-                # Convert distance to confidence
-                confidence = metadata.get('confidence', 1.0 - (distance / 2.0))
+                # Use distance-based confidence (cosine: 0=identical, 2=opposite)
+                # Use distance-based confidence scaled by source trustworthiness (0.6 for community docs)
+                source_trust = 0.6
+                query_relevance = 1.0 - (distance / 2.0)
+                confidence = query_relevance * source_trust
 
                 search_results.append(SearchResult(
                     quote=doc,
@@ -586,6 +701,162 @@ Your answer:"""
                     confidence=confidence,
                     source=f"OpenAPS Docs ({metadata.get('source_repo', 'unknown')})",
                     context=metadata.get('file_path', '')
+                ))
+
+        return search_results
+
+    def search_loop_docs(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search Loop documentation.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects from Loop docs
+        """
+        try:
+            collection = self.chroma_client.get_collection(name="loop_docs")
+        except Exception:
+            # Collection doesn't exist yet
+            return []
+
+        if collection.count() == 0:
+            return []
+
+        # Search ChromaDB
+        try:
+            results = collection.query(
+                query_texts=[query],
+                n_results=min(top_k, collection.count())
+            )
+        except Exception as e:
+            print(f"Error querying loop_docs collection: {e}")
+            return []
+
+        # Convert to SearchResult objects
+        search_results = []
+        if results['documents'] and results['documents'][0]:
+            for i, doc in enumerate(results['documents'][0]):
+                metadata = results['metadatas'][0][i]
+                distance = results['distances'][0][i] if results['distances'] else 0.5
+
+                # Use distance-based confidence scaled by source trustworthiness (0.6)
+                source_trust = 0.6
+                query_relevance = 1.0 - (distance / 2.0)
+                confidence = query_relevance * source_trust
+
+                search_results.append(SearchResult(
+                    quote=doc,
+                    page_number=None,
+                    confidence=confidence,
+                    source=f"Loop Docs ({metadata.get('source_repo', 'unknown')})",
+                    context=metadata.get('file_path', '')
+                ))
+
+        return search_results
+
+    def search_androidaps_docs(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search AndroidAPS documentation.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects from AndroidAPS docs
+        """
+        try:
+            collection = self.chroma_client.get_collection(name="androidaps_docs")
+        except Exception:
+            # Collection doesn't exist yet
+            return []
+
+        if collection.count() == 0:
+            return []
+
+        # Search ChromaDB
+        try:
+            results = collection.query(
+                query_texts=[query],
+                n_results=min(top_k, collection.count())
+            )
+        except Exception as e:
+            print(f"Error querying androidaps_docs collection: {e}")
+            return []
+
+        # Convert to SearchResult objects
+        search_results = []
+        if results['documents'] and results['documents'][0]:
+            for i, doc in enumerate(results['documents'][0]):
+                metadata = results['metadatas'][0][i]
+                distance = results['distances'][0][i] if results['distances'] else 0.5
+
+                # Use distance-based confidence scaled by source trustworthiness (0.6)
+                source_trust = 0.6
+                query_relevance = 1.0 - (distance / 2.0)
+                confidence = query_relevance * source_trust
+
+                search_results.append(SearchResult(
+                    quote=doc,
+                    page_number=None,
+                    confidence=confidence,
+                    source=f"AndroidAPS Docs ({metadata.get('source_repo', 'unknown')})",
+                    context=metadata.get('file_path', '')
+                ))
+
+        return search_results
+
+    def search_wikipedia_education(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search Wikipedia T1D education content.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects from Wikipedia articles
+        """
+        try:
+            collection = self.chroma_client.get_collection(name="wikipedia_education")
+        except Exception:
+            # Collection doesn't exist yet
+            return []
+
+        if collection.count() == 0:
+            return []
+
+        # Search ChromaDB
+        try:
+            results = collection.query(
+                query_texts=[query],
+                n_results=min(top_k, collection.count())
+            )
+        except Exception as e:
+            print(f"Error querying wikipedia_education collection: {e}")
+            return []
+
+        # Convert to SearchResult objects
+        search_results = []
+        if results['documents'] and results['documents'][0]:
+            for i, doc in enumerate(results['documents'][0]):
+                metadata = results['metadatas'][0][i]
+                distance = results['distances'][0][i] if results['distances'] else 0.5
+
+                # Use distance-based confidence scaled by source trustworthiness (0.8)
+                source_trust = 0.8
+                query_relevance = 1.0 - (distance / 2.0)
+                confidence = query_relevance * source_trust
+
+                search_results.append(SearchResult(
+                    quote=doc,
+                    page_number=None,
+                    confidence=confidence,
+                    source=f"Wikipedia ({metadata.get('title', 'unknown')})",
+                    context=metadata.get('url', '')
                 ))
 
         return search_results
@@ -616,15 +887,19 @@ Your answer:"""
 
         # All available search methods and their collection names
         search_methods = {
-            'theory': self.search_theory,
-            'camaps': self.search_camaps,
-            'ypsomed': self.search_ypsomed,
-            'libre': self.search_libre,
             'ada_standards': self.search_ada_standards,
             'australian_guidelines': self.search_australian_guidelines,
             'research_papers': self.search_research_papers,
             'openaps_docs': self.search_openaps_docs,
+            'loop_docs': self.search_loop_docs,
+            'androidaps_docs': self.search_androidaps_docs,
+            'wikipedia_education': self.search_wikipedia_education,
         }
+
+        # Add user-uploaded sources dynamically
+        for key in self.pdf_paths:
+            if key.startswith('user_'):
+                search_methods[key] = lambda q, k=key: self._search_collection(k, q, 5)
 
         all_results = []
         search_times = {}
@@ -779,6 +1054,51 @@ Your answer:"""
             stats['error'] = str(e)
         return stats
 
+    def refresh_user_sources(self):
+        """Re-scan user sources directory and index new PDFs."""
+        from .source_manager import UserSourceManager
+
+        manager = UserSourceManager(self.project_root)
+        pending = manager.get_pending_sources()
+
+        for source in pending:
+            file_path = Path(source.file_path)
+            if file_path.exists():
+                collection = self.chroma_client.get_or_create_collection(
+                    name=source.collection_key,
+                    metadata={"hnsw:space": "cosine"}
+                )
+
+                if collection.count() == 0:
+                    print(f"🔧 Indexing {source.display_name}...")
+                    self._process_pdf(
+                        source.collection_key,
+                        file_path,
+                        collection
+                    )
+                    print(f"✅ {source.display_name} indexed!")
+
+                manager.mark_indexed(source.collection_key, collection.count())
+
+                # Add to internal mappings
+                self.pdf_paths[source.collection_key] = source.file_path
+                self.source_names[source.collection_key] = source.display_name
+                self.source_trust[source.collection_key] = 0.9
+
+    def delete_user_source_collection(self, collection_key: str):
+        """Delete a ChromaDB collection for a user source."""
+        try:
+            self.chroma_client.delete_collection(name=collection_key)
+            # Remove from internal mappings
+            if collection_key in self.pdf_paths:
+                del self.pdf_paths[collection_key]
+            if collection_key in self.source_names:
+                del self.source_names[collection_key]
+            if collection_key in self.source_trust:
+                del self.source_trust[collection_key]
+        except Exception as e:
+            print(f"Warning: Could not delete collection {collection_key}: {e}")
+
     def search_with_synthesis(self, source_key: str, query: str, top_k: int = 5) -> str:
         """
         Search and synthesize answer with Gemini.
@@ -818,48 +1138,23 @@ class ResearcherAgent:
             # Import legacy backend
             from .researcher import ResearcherAgent as LegacyResearcher
             self.backend = LegacyResearcher(project_root=project_root)
-    
-    def search_theory(self, query: str) -> List[SearchResult]:
-        """Search Think Like a Pancreas for diabetes management theory."""
-        if self.use_chromadb:
-            return self.backend.search_theory(query)
-        else:
-            return self.backend.search_theory(query)
-    
-    def search_camaps(self, query: str) -> List[SearchResult]:
-        """Search CamAPS FX manual for hybrid closed-loop algorithm information."""
-        if self.use_chromadb:
-            return self.backend.search_camaps(query)
-        else:
-            return self.backend.search_camaps(query)
-    
-    def search_ypsomed(self, query: str) -> List[SearchResult]:
-        """Search Ypsomed pump manual for hardware procedures."""
-        if self.use_chromadb:
-            return self.backend.search_ypsomed(query)
-        else:
-            return self.backend.search_ypsomed(query)
-    
-    def search_libre(self, query: str) -> List[SearchResult]:
-        """Search FreeStyle Libre 3 manual for CGM information."""
-        if self.use_chromadb:
-            return self.backend.search_libre(query)
-        else:
-            return self.backend.search_libre(query)
 
-    def search_ada_standards(self, query: str, sections: List[str] = None) -> List[SearchResult]:
+    def search_ada_standards(self, query: str, sections: List[str] = None, top_k: int = 5) -> List[SearchResult]:
         """
-        Search ADA Standards of Care 2026 for evidence-based recommendations.
+        Search ADA Standards of Care for evidence-based recommendations.
+
+        This is the highest-trust source (confidence=1.0) for clinical guidelines.
 
         Args:
             query: Search query
             sections: Optional list of section numbers to focus on
+            top_k: Number of results to return
 
         Returns:
-            List of SearchResult objects
+            List of SearchResult objects with highest trust ranking
         """
         if self.use_chromadb:
-            return self.backend.search_ada_standards(query, sections)
+            return self.backend.search_ada_standards(query, sections, top_k)
         else:
             # Legacy fallback - no section filtering
             return []
@@ -923,6 +1218,21 @@ class ResearcherAgent:
         """
         if self.use_chromadb:
             return self.backend.search_openaps_docs(query)
+        else:
+            return []
+
+    def search_wikipedia_education(self, query: str) -> List[SearchResult]:
+        """
+        Search Wikipedia T1D education content.
+
+        Args:
+            query: Search query
+
+        Returns:
+            List of SearchResult objects from Wikipedia articles
+        """
+        if self.use_chromadb:
+            return self.backend.search_wikipedia_education(query)
         else:
             return []
 
@@ -1003,15 +1313,12 @@ class ResearcherAgent:
         
         results = {}
         search_map = {
-            "theory": self.search_theory,
-            "camaps": self.search_camaps,
-            "ypsomed": self.search_ypsomed,
-            "libre": self.search_libre,
             "clinical_guidelines": self.search_clinical_guidelines,
             "ada_standards": self.search_ada_standards,
             "australian_guidelines": self.search_australian_guidelines,
             "research_papers": self.search_research_papers,
             "openaps_docs": self.search_openaps_docs,
+            "wikipedia_education": self.search_wikipedia_education,
             "pubmed_research": self.search_research_papers,  # Alias
             "glooko_data": lambda q: [],  # Placeholder - handled by GlookoQueryAgent
         }
@@ -1032,6 +1339,56 @@ class ResearcherAgent:
                     results[source] = []
         
         return results
+
+
+    def query_knowledge(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Query the new documentation collections for diabetes management knowledge.
+
+        Searches the following collections with specified confidence levels:
+        - openaps_docs (258 chunks, confidence=0.6)
+        - loop_docs (393 chunks, confidence=0.6)
+        - androidaps_docs (384 chunks, confidence=0.6)
+        - research_papers (39 chunks, confidence=0.7)
+        - wikipedia_education (42 chunks, confidence=0.6)
+
+        All collections are queried in parallel and results are merged by confidence score.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects sorted by confidence
+        """
+        if not self.use_chromadb:
+            return []
+
+        # Collections to search (source trust applied in individual search methods):
+        # - openaps_docs, loop_docs, androidaps_docs: 0.6 trust (community docs, lower priority)
+        # - research_papers: 0.7 trust (peer-reviewed but abstracts only)
+        # - wikipedia_education: 0.8 trust (educational, may be edited)
+        search_methods = [
+            ('openaps_docs', self.backend.search_openaps_docs),
+            ('loop_docs', self.backend.search_loop_docs),
+            ('androidaps_docs', self.backend.search_androidaps_docs),
+            ('research_papers', self.backend.search_research_papers),
+            ('wikipedia_education', self.backend.search_wikipedia_education),
+        ]
+
+        all_results = []
+
+        # Search all collections
+        for collection_name, search_fn in search_methods:
+            try:
+                results = search_fn(query, top_k)
+                all_results.extend(results)
+            except Exception as e:
+                print(f"Error searching {collection_name}: {e}")
+
+        # Sort by confidence (already includes source trustworthiness) and return top results
+        all_results.sort(key=lambda x: x.confidence, reverse=True)
+        return all_results[:top_k]
 
 
 if __name__ == "__main__":

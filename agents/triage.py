@@ -32,12 +32,10 @@ except ImportError:
 
 class QueryCategory(Enum):
     """Categories for routing queries to knowledge sources."""
-    THEORY = "theory"      # Diabetes management concepts, insulin strategies
-    CAMAPS = "camaps"      # CamAPS FX algorithm, Boost/Ease modes
-    YPSOMED = "ypsomed"    # Pump hardware, cartridge changes
-    LIBRE = "libre"        # CGM sensor, readings, alarms
     GLOOKO_DATA = "glooko_data"  # Personal Glooko diabetes data queries
     CLINICAL_GUIDELINES = "clinical_guidelines"  # Evidence-based clinical recommendations
+    USER_SOURCES = "user_sources"  # User-uploaded product manuals
+    KNOWLEDGE_BASE = "knowledge_base"  # Public knowledge (OpenAPS, Loop, etc.)
     HYBRID = "hybrid"      # Spans multiple domains
 
 
@@ -70,12 +68,10 @@ class TriageAgent:
 
     # Category descriptions for the classifier
     CATEGORY_DESCRIPTIONS = {
-        "theory": "Diabetes management concepts, insulin strategies, carb counting, blood sugar patterns, basal/bolus theory, correction factors, insulin sensitivity",
-        "camaps": "CamAPS FX hybrid closed-loop algorithm, Boost mode, Ease-off mode, auto-mode behavior, target glucose settings, algorithm adjustments",
-        "ypsomed": "Ypsomed/mylife pump hardware, cartridge changes, infusion sets, button operations, battery, priming, physical pump troubleshooting",
-        "libre": "FreeStyle Libre 3 CGM sensor, sensor application, glucose readings, alarms, scanning, sensor errors, warm-up period",
-        "glooko_data": "Personal diabetes data queries about user's own glucose readings, time in range, averages, patterns, trends from uploaded Glooko export files. Keywords: my glucose, my blood sugar, my time in range, my readings, last week, how many times, average, trend, pattern, dawn phenomenon, post-meal spike",
+        "glooko_data": "Personal diabetes data queries about user's own glucose readings, time in range, averages, patterns, trends from uploaded Glooko export files. Keywords: my glucose, my blood sugar, my time in range, my readings, last week, how many times, average, trend, pattern, dawn phenomenon, post-meal spike, when do I, do I experience, my lows, my highs, my hypos, typically, usually. IMPORTANT: Any question using 'I' or 'my' that asks about patterns, timing, frequency, or personal glucose behavior should be classified as glooko_data.",
         "clinical_guidelines": "Evidence-based clinical recommendations and standards. Keywords: 'what does evidence say about', 'clinical recommendations for', 'what do guidelines recommend', 'is there evidence for'. Technology choice questions (pump vs MDI, CGM benefits) → Australian Guidelines Section 3. Treatment targets and goals → ADA Standards Section 6. Cardiovascular/kidney/complication management → ADA Standards Sections 10-12",
+        "user_sources": "Questions about user-uploaded device manuals and product guides. Pump operation, CGM usage, device-specific features.",
+        "knowledge_base": "General diabetes management questions answered from public knowledge sources (OpenAPS, Loop, AndroidAPS, Wikipedia, PubMed research)",
         "hybrid": "Questions spanning multiple domains that need information from more than one source",
     }
 
@@ -105,27 +101,31 @@ class TriageAgent:
 Classify the following query into ONE primary category:
 
 Categories:
-- theory: {self.CATEGORY_DESCRIPTIONS['theory']}
-- camaps: {self.CATEGORY_DESCRIPTIONS['camaps']}
-- ypsomed: {self.CATEGORY_DESCRIPTIONS['ypsomed']}
-- libre: {self.CATEGORY_DESCRIPTIONS['libre']}
 - glooko_data: {self.CATEGORY_DESCRIPTIONS['glooko_data']}
 - clinical_guidelines: {self.CATEGORY_DESCRIPTIONS['clinical_guidelines']}
+- user_sources: {self.CATEGORY_DESCRIPTIONS['user_sources']}
+- knowledge_base: {self.CATEGORY_DESCRIPTIONS['knowledge_base']}
 - hybrid: {self.CATEGORY_DESCRIPTIONS['hybrid']}
 
 Query: "{query}"
 
 Respond in JSON format:
 {{
-  "category": "theory|camaps|ypsomed|libre|glooko_data|clinical_guidelines|hybrid",
+  "category": "glooko_data|clinical_guidelines|user_sources|knowledge_base|hybrid",
   "confidence": 0.0-1.0,
   "reasoning": "Brief explanation of why this category was chosen",
   "secondary_categories": ["other", "relevant", "categories"]
 }}
 
 Rules:
-- Choose "glooko_data" if the query is about the USER'S OWN data/readings (my glucose, my readings, last week, my time in range)
+- Choose "glooko_data" if the query is about the USER'S OWN data/readings/patterns. This includes:
+  * Questions with "my" (my glucose, my readings, my time in range, my lows, my highs)
+  * Questions with "I" asking about personal patterns (when do I, do I experience, do I typically)
+  * Questions about timing of personal events (when do I get lows, what time do I spike)
+  * Questions about frequency (how often do I, how many times)
 - Choose "clinical_guidelines" if asking about evidence, clinical recommendations, treatment targets, or what guidelines say
+- Choose "user_sources" if asking about specific device features, pump operation, or CGM usage
+- Choose "knowledge_base" for general diabetes management questions
 - Choose "hybrid" only if the query clearly needs information from 2+ distinct sources
 - Be confident (0.8+) when keywords strongly match a category
 - List secondary_categories only if they might have supplementary info"""
@@ -146,12 +146,17 @@ Rules:
             category = QueryCategory(data["category"])
             secondary = [QueryCategory(c) for c in data.get("secondary_categories", [])]
 
-            return Classification(
+            classification = Classification(
                 category=category,
                 confidence=float(data["confidence"]),
                 reasoning=data["reasoning"],
                 secondary_categories=secondary,
             )
+
+            # Apply keyword fallback to catch personal data queries the LLM might miss
+            classification = self._apply_glooko_fallback(query, classification)
+
+            return classification
 
         except Exception as e:
             # Default to hybrid if classification fails
@@ -161,6 +166,48 @@ Rules:
                 reasoning=f"Classification failed: {e}. Defaulting to hybrid search.",
                 secondary_categories=[],
             )
+
+    def _apply_glooko_fallback(self, query: str, classification: Classification) -> Classification:
+        """
+        Apply keyword-based fallback to ensure personal data queries go to Glooko.
+
+        Catches phrases like "my data", "look at my", "analyze my", etc. that
+        the LLM might miss.
+        """
+        q_lower = query.lower()
+
+        # Strong indicators of personal data queries
+        personal_data_phrases = [
+            "my data", "my readings", "my glucose", "my blood sugar",
+            "my numbers", "my levels", "my results", "my cgm",
+            "my time in range", "my tir", "my lows", "my highs",
+            "look at my", "analyze my", "check my", "review my",
+            "based on my", "from my", "in my data", "my glooko",
+            "my patterns", "my trends", "my average",
+        ]
+
+        # Personal timing/frequency questions
+        personal_pattern_phrases = [
+            "when do i", "what time do i", "do i typically", "do i usually",
+            "how often do i", "how many times do i", "am i", "have i been",
+            "why do i", "where do i", "do i experience", "do i get",
+        ]
+
+        # Check for personal data indicators
+        is_personal = any(phrase in q_lower for phrase in personal_data_phrases)
+        is_pattern_question = any(phrase in q_lower for phrase in personal_pattern_phrases)
+
+        if is_personal or is_pattern_question:
+            # Override to glooko_data if not already
+            if classification.category != QueryCategory.GLOOKO_DATA:
+                return Classification(
+                    category=QueryCategory.GLOOKO_DATA,
+                    confidence=0.9,
+                    reasoning=f"Keyword fallback: detected personal data query ({classification.reasoning})",
+                    secondary_categories=classification.secondary_categories,
+                )
+
+        return classification
 
     def _search_categories(
         self, query: str, categories: list[QueryCategory]
@@ -180,33 +227,51 @@ Rules:
             categories = [c for c in categories if c != QueryCategory.GLOOKO_DATA]
             if not categories:
                 return {}
-        
+
         # Build list of source keys to search
         sources_to_search = []
 
+        # Track if we need to search the knowledge base (openaps_docs, loop_docs, etc.)
+        needs_knowledge_search = False
+
         category_to_source = {
-            QueryCategory.THEORY: "theory",
-            QueryCategory.CAMAPS: "camaps",
-            QueryCategory.YPSOMED: "ypsomed",
-            QueryCategory.LIBRE: "libre",
             QueryCategory.CLINICAL_GUIDELINES: "clinical_guidelines",
+            QueryCategory.KNOWLEDGE_BASE: "knowledge_base",
+            QueryCategory.USER_SOURCES: "user_sources",
         }
 
         for category in categories:
             if category == QueryCategory.HYBRID:
                 # Search all sources for hybrid queries
-                sources_to_search.extend(["theory", "camaps", "ypsomed", "libre", "clinical_guidelines"])
+                sources_to_search.append("clinical_guidelines")
+                needs_knowledge_search = True
+            elif category == QueryCategory.KNOWLEDGE_BASE:
+                needs_knowledge_search = True
+            elif category == QueryCategory.USER_SOURCES:
+                sources_to_search.append("user_sources")
             elif category in category_to_source:
                 sources_to_search.append(category_to_source[category])
-        
+
         # Remove duplicates while preserving order
         sources_to_search = list(dict.fromkeys(sources_to_search))
-        
-        # Execute all searches in parallel
+
+        results = {}
+
+        # Execute legacy source searches in parallel
         if sources_to_search:
-            return self.researcher.search_multiple(query, sources_to_search)
-        
-        return {}
+            results = self.researcher.search_multiple(query, sources_to_search)
+
+        # For THEORY and HYBRID queries, also search the new knowledge collections
+        # (openaps_docs, loop_docs, androidaps_docs, wikipedia_education, research_papers)
+        if needs_knowledge_search:
+            try:
+                knowledge_results = self.researcher.query_knowledge(query, top_k=5)
+                if knowledge_results:
+                    results["knowledge_base"] = knowledge_results
+            except Exception as e:
+                print(f"Warning: Knowledge base search failed: {e}")
+
+        return results
 
     def _synthesize_answer(
         self,
@@ -230,10 +295,13 @@ Rules:
             return ""
         
         # Collect all high-confidence results
+        # Use 0.6 threshold to include knowledge base results (openaps_docs, loop_docs, etc.)
+        # which typically have confidence scores of 0.64-0.67
+        CONFIDENCE_THRESHOLD = 0.6
         all_chunks = []
         for source, source_results in results.items():
             for result in source_results:
-                if result.confidence >= 0.7:
+                if result.confidence >= CONFIDENCE_THRESHOLD:
                     all_chunks.append(result)
 
         if not all_chunks:

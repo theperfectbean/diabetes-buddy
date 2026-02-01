@@ -1,0 +1,13 @@
+{
+  "source_type": "cgm",
+  "source_id": "libre_3",
+  "source_name": "FreeStyle Libre 3",
+  "manufacturer": "Abbott",
+  "version": "3d9e1c01",
+  "source_url": "https://freestyleprovider.abbott/content/dam/adc/freestyleprovider/countries/us-en/4-2-page/documents/Brochure_FreeStyle_Libre3_Getting_Started_Guide.pdf",
+  "fetched_at": "2026-01-30T05:19:03.848714",
+  "content_hash": "7c11595ce3d960617cb1159aadb3f3525713c5a1c9cb38257fdcbffa955f3247",
+  "file_size_bytes": 2434080,
+  "license": "Freely available from manufacturer",
+  "notes": ""
+}

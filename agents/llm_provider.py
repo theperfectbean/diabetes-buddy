@@ -216,7 +216,7 @@ class LiteLLMProvider(LLMProvider):
     """
 
     provider_name = "litellm"
-    DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini/gemini-2.5-flash")
     DEFAULT_EMBEDDING_MODEL = os.environ.get("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
 
     def __init__(
@@ -517,7 +517,7 @@ class GeminiProvider(LLMProvider):
     """
 
     provider_name = "gemini"
-    DEFAULT_TEXT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    DEFAULT_TEXT_MODEL = os.environ.get("GEMINI_MODEL", "gemini/gemini-2.5-flash")
     DEFAULT_EMBEDDING_MODEL = os.environ.get("GEMINI_EMBEDDING_MODEL", "textembedding-gecko")
 
     def __init__(

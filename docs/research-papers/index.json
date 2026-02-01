@@ -1,0 +1,28 @@
+{
+  "last_updated": "2026-01-31T12:29:10.966665",
+  "total_articles": 2,
+  "articles_by_month": {
+    "2025-07": 1,
+    "2025-08": 1
+  },
+  "articles": [
+    {
+      "pmid": "40652453",
+      "title": "Preexisting Diabetes and Pregnancy: An Endocrine Society and European Society of Endocrinology Joint Clinical Practice Guideline.",
+      "publication_date": "2025-08-07T00:00:00",
+      "relevance_score": 0.6725663716814155,
+      "requires_safety_review": false,
+      "json_path": "2025-08/article-40652453.json",
+      "md_path": "2025-08/article-40652453.md"
+    },
+    {
+      "pmid": "40590464",
+      "title": "Research Gaps, Challenges, and Opportunities in Automated Insulin Delivery Systems.",
+      "publication_date": "2025-07-01T00:00:00",
+      "relevance_score": 0.6814159292035393,
+      "requires_safety_review": false,
+      "json_path": "2025-07/article-40590464.json",
+      "md_path": "2025-07/article-40590464.md"
+    }
+  ]
+}
