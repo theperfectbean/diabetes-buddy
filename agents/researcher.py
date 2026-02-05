@@ -1,7 +1,7 @@
 """
 RAG Researcher Agent for Diabetes Buddy
 
-Uses Gemini File API for PDF processing and semantic search.
+Uses a file-based API for PDF processing and semantic search.
 Provides specialist methods for each knowledge domain.
 Dynamically discovers knowledge sources from knowledge-sources directory.
 """
@@ -34,9 +34,9 @@ class SearchResult:
 
 class ResearcherAgent:
     """
-    RAG Researcher Agent that searches PDF knowledge bases using Gemini.
+    RAG Researcher Agent that searches PDF knowledge bases using the configured LLM.
 
-    Uses the Gemini File API to upload and process PDFs, with local caching
+    Uses a file upload API to process PDFs, with local caching
     to avoid re-uploading unchanged files.
     """
 
@@ -66,7 +66,7 @@ class ResearcherAgent:
         self.knowledge_dir = self.project_root / "docs" / "knowledge-sources"
 
         # Cache directory for file handles
-        self.cache_dir = self.project_root / ".cache" / "gemini_files"
+        self.cache_dir = self.project_root / ".cache" / "llm_files"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         # File handle cache (source_key -> file object)
@@ -238,33 +238,33 @@ class ResearcherAgent:
             if cache_data.get("file_hash") != current_hash:
                 return None
 
-            # Try to retrieve the file from Gemini
+            # Try to retrieve the file from the provider
             file_name = cache_data.get("file_name")
             if not file_name:
                 return None
 
-            gemini_file = self.llm.get_file(file_id=file_name)
+            file_ref = self.llm.get_file(file_id=file_name)
 
-            # gemini_file may be a FileReference wrapper; get underlying provider object
-            underlying = getattr(gemini_file, "provider_data", gemini_file)
+            # file_ref may be a FileReference wrapper; get underlying provider object
+            underlying = getattr(file_ref, "provider_data", file_ref)
 
-            # Check if file is still active (Gemini SDK object)
+            # Check if file is still active
             state = getattr(underlying, "state", None)
             state_name = getattr(state, "name", None) if state else None
             if state_name == "ACTIVE":
-                return gemini_file
+                return file_ref
 
             return None
 
         except Exception:
             return None
 
-    def _save_file_cache(self, source_key: str, file_path: Path, gemini_file: Any) -> None:
+    def _save_file_cache(self, source_key: str, file_path: Path, file_ref: Any) -> None:
         """Save file handle info to cache."""
         cache_path = self._get_cache_path(source_key)
-        underlying = getattr(gemini_file, "provider_data", None)
-        file_name = getattr(underlying, "name", None) if underlying is not None else getattr(gemini_file, "file_id", None)
-        display_name = getattr(underlying, "display_name", None) if underlying is not None else getattr(gemini_file, "display_name", None)
+        underlying = getattr(file_ref, "provider_data", None)
+        file_name = getattr(underlying, "name", None) if underlying is not None else getattr(file_ref, "file_id", None)
+        display_name = getattr(underlying, "display_name", None) if underlying is not None else getattr(file_ref, "display_name", None)
         cache_data = {
             "file_name": file_name,
             "file_hash": self._get_file_hash(file_path),
@@ -275,13 +275,13 @@ class ResearcherAgent:
 
     def _get_or_upload_file(self, source_key: str) -> Any:
         """
-        Get a file from cache or upload it to Gemini.
+        Get a file from cache or upload it to the provider.
 
         Args:
             source_key: Source key (e.g., 'theory', 'pump_camaps_fx', etc.)
 
         Returns:
-            Gemini File object
+            Provider file object
         """
         # Check memory cache first
         if source_key in self._file_cache:
@@ -312,18 +312,18 @@ class ResearcherAgent:
             self._file_cache[source_key] = cached_file
             return cached_file
 
-        # Upload to Gemini
-        print(f"Uploading {source_info['name']} to Gemini...")
-        gemini_file = self.llm.upload_file(
+        # Upload to provider
+        print(f"Uploading {source_info['name']} for processing...")
+        file_ref = self.llm.upload_file(
             file_path=file_path,
             display_name=source_info['name'],
         )
 
         # Cache it
-        self._save_file_cache(source_key, file_path, gemini_file)
-        self._file_cache[source_key] = gemini_file
+        self._save_file_cache(source_key, file_path, file_ref)
+        self._file_cache[source_key] = file_ref
 
-        return gemini_file
+        return file_ref
 
     def _search_source(self, source_key: str, query: str) -> list[SearchResult]:
         """
@@ -351,7 +351,7 @@ class ResearcherAgent:
         # Fallback to regular file handle if caching unavailable
         if not cached_context:
             try:
-                gemini_file = self._get_or_upload_file(source_key)
+                file_ref = self._get_or_upload_file(source_key)
             except FileNotFoundError as e:
                 print(f"Warning: {e}")
                 return []
@@ -376,7 +376,7 @@ class ResearcherAgent:
             return self._search_cache[cache_key]
         
         try:
-            gemini_file = self._get_or_upload_file(source_key)
+            file_ref = self._get_or_upload_file(source_key)
         except FileNotFoundError as e:
             print(f"Warning: {e}")
             return []
@@ -410,7 +410,7 @@ Rules:
             response_text = self.llm.generate_text(
                 prompt=search_prompt,
                 config=GenerationConfig(temperature=0.3),
-                file_reference=gemini_file,
+                file_reference=file_ref,
             )
 
             # Handle markdown code blocks
@@ -571,7 +571,7 @@ if __name__ == "__main__":
 
     except ValueError as e:
         print(f"Configuration error: {e}")
-        print("Make sure GEMINI_API_KEY is set in your .env file")
+        print("Make sure LLM_API_KEY is set in your .env file")
     except Exception as e:
         print(f"Error: {e}")
         raise

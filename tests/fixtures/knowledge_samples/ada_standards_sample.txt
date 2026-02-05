@@ -1,0 +1,79 @@
+=== ADA Standards of Medical Care in Diabetes 2026 ===
+=== Section 6: Glycemic Targets ===
+Page 45
+
+For most nonpregnant adults with type 1 diabetes, an A1C target of <7% (53 mmol/mol) is recommended. More stringent A1C goals (such as <6.5%) may be considered for selected individuals if this can be achieved without significant hypoglycemia or other adverse effects of treatment.
+
+Less stringent A1C goals (such as <8%) may be appropriate for patients with a history of severe hypoglycemia, limited life expectancy, advanced microvascular or macrovascular complications, extensive comorbid conditions, or long-standing diabetes in whom the goal is difficult to achieve despite diabetes self-management education, appropriate glucose monitoring, and effective doses of multiple glucose-lowering agents including insulin.
+
+---
+=== Section 7: Diabetes Technology ===
+Page 89
+
+CGM accuracy requirements for clinical decision making include a mean absolute relative difference (MARD) of less than 10% for optimal performance. All CGM systems approved by the FDA meet this criterion. Healthcare providers should educate patients on the proper use of CGM data, including understanding directional arrows, trend analysis, and appropriate responses to glucose alerts.
+
+Real-time CGM should be offered to youth and adults with type 1 diabetes who are capable of using the device safely. CGM has been shown to improve glycemic control and reduce hypoglycemia across all age groups when used consistently.
+
+---
+=== Section 7: Insulin Therapy ===
+Page 67
+
+Individualize insulin regimens based on patient needs, preferences, and abilities. Most people with type 1 diabetes should be treated with multiple daily injections of prandial and basal insulin or continuous subcutaneous insulin infusion (insulin pump therapy).
+
+Insulin-to-carbohydrate ratios should be individualized and may vary by time of day. Many people with type 1 diabetes require 1 unit of rapid-acting insulin for every 10-15 grams of carbohydrate consumed, though this can range from 1:5 to 1:25 depending on individual insulin sensitivity.
+
+---
+=== Section 5: Facilitating Behavior Change and Well-being ===
+Page 34
+
+Carbohydrate counting is fundamental to intensive insulin therapy and allows for precise matching of prandial insulin doses to carbohydrate intake. All individuals using rapid-acting insulin should receive education in carbohydrate counting.
+
+Healthcare providers should assess diabetes self-management knowledge and skills at regular intervals and provide ongoing education as needed. Topics should include glucose monitoring, insulin administration, carbohydrate counting, exercise management, and recognition and treatment of hypoglycemia.
+
+---
+=== Section 6: Hypoglycemia Management ===
+Page 52
+
+Hypoglycemia is defined as blood glucose <70 mg/dL (3.9 mmol/L). Level 2 hypoglycemia (glucose <54 mg/dL or 3.0 mmol/L) is clinically significant and requires immediate treatment. Level 3 hypoglycemia indicates severe cognitive impairment requiring assistance.
+
+For conscious individuals, treat hypoglycemia with 15-20 grams of fast-acting carbohydrates (glucose tablets preferred). Recheck glucose in 15 minutes and repeat treatment if needed. Once glucose is normalized, consume a meal or snack to prevent recurrence.
+
+---
+=== Section 9: Pharmacologic Approaches to Glycemic Treatment ===
+Page 112
+
+Insulin dosing should be individualized based on body weight, insulin sensitivity, carbohydrate intake, and physical activity. Initial total daily insulin doses typically range from 0.4-0.8 units/kg/day, with approximately 40-50% given as basal insulin and the remainder as prandial insulin.
+
+Correction factors (insulin sensitivity factors) can be estimated using the 1800 rule for rapid-acting insulin: 1800 ÷ total daily dose = mg/dL drop per unit of insulin. This should be adjusted based on individual response.
+
+---
+=== Section 7: Continuous Glucose Monitoring ===
+Page 93
+
+CGM calibration requirements vary by device. Older systems require fingerstick calibrations 2-4 times daily, while newer factory-calibrated systems do not require routine fingersticks. When calibration is required, perform calibrations when glucose is stable rather than during rapid changes.
+
+Users should be educated on sensor warm-up periods, insertion site rotation, and troubleshooting common issues such as compression lows or sensor failures. Regular review of CGM data with healthcare providers improves outcomes.
+
+---
+=== Section 8: Obesity and Weight Management ===
+Page 98
+
+Weight management is an important consideration for individuals with type 1 diabetes. Insulin therapy can lead to weight gain if caloric intake exceeds energy expenditure. Carbohydrate counting and meal planning should address both glycemic control and appropriate caloric intake.
+
+Physical activity should be encouraged as part of comprehensive diabetes management. Exercise can improve insulin sensitivity, cardiovascular health, and psychosocial well-being. Patients should be educated on adjusting insulin and carbohydrate intake for exercise.
+
+---
+=== Section 10: Cardiovascular Disease and Risk Management ===
+Page 125
+
+Adults with type 1 diabetes should be screened for cardiovascular risk factors annually, including blood pressure, lipid profile, smoking status, and family history. Blood pressure targets are generally <140/90 mmHg for most adults, with lower targets (<130/80 mmHg) for those at high cardiovascular risk.
+
+Statin therapy should be considered for adults with type 1 diabetes age 40-75 years with additional cardiovascular risk factors, regardless of baseline LDL cholesterol level.
+
+---
+=== Section 11: Chronic Kidney Disease and Risk Management ===
+Page 138
+
+Annual screening for albuminuria and estimated glomerular filtration rate (eGFR) should begin 5 years after diagnosis in adults with type 1 diabetes. Early detection and treatment of diabetic kidney disease can slow progression to end-stage renal disease.
+
+ACE inhibitors or ARBs are recommended for individuals with albuminuria or reduced eGFR, unless contraindicated. Blood pressure control is critical for kidney disease prevention and management.

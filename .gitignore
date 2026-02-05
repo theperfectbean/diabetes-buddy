@@ -53,3 +53,24 @@ Thumbs.db
 *.log
 .venv/
 .vscode/
+
+# Node modules (anywhere in project)
+**/node_modules/
+
+# Logs directory
+logs/
+
+# Coverage reports
+.coverage
+htmlcov/
+coverage.xml
+
+# Package lock files at root (if not needed)
+/package.json
+/package-lock.json
+
+# Temporary/mystery files
+gary@archsurface
+
+# Benchmark logs
+benchmark_*.log

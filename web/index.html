@@ -37,8 +37,22 @@
             </div>
         </header>
 
+        <!-- Conversation History Sidebar -->
+        <aside class="conversation-sidebar" role="complementary" aria-label="Conversation history">
+            <div class="sidebar-section conversation-history-section">
+                <h3>Conversation History</h3>
+                <button id="newConversationBtn" class="new-conversation-btn" aria-label="Start new conversation">
+                    <span class="icon">+</span> New Chat
+                </button>
+                <div id="conversationList" class="conversation-list" role="list">
+                    <div class="conversation-item loading" role="listitem">Loading conversations...</div>
+                </div>
+            </div>
+        </aside>
+
         <!-- Main Content Area -->
         <main class="main-content" role="main">
+
             <!-- Chat Panel -->
             <div id="chatPanel" class="panel active" role="tabpanel" aria-labelledby="chatTab">
                 <div class="chat-container">
@@ -224,6 +238,70 @@
 
             <h2 id="settingsTitle">Settings</h2>
 
+            <!-- Glucose Units Section -->
+            <section class="settings-section">
+                <h3>Glucose Units</h3>
+                <p class="settings-hint">Choose how glucose values are displayed throughout the app.</p>
+                <div class="form-group">
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" id="glucoseUnitMmol" name="glucoseUnit" value="mmol/L">
+                            <span>mmol/L (Metric)</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" id="glucoseUnitMgdl" name="glucoseUnit" value="mg/dL">
+                            <span>mg/dL (US)</span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Device Confirmation Section -->
+            <section class="settings-section">
+                <h3>Your Diabetes Devices</h3>
+                <p class="settings-hint">Confirm your devices for personalized responses. We'll use this to find relevant information about your pump and CGM.</p>
+                <button id="editDevicesSettingsBtn" class="btn btn-secondary">Edit Devices</button>
+                <div id="deviceConfirmationArea" class="device-confirmation-area" hidden>
+                    <div class="device-detection-results">
+                        <div id="detectedDevices" class="detected-devices">
+                            <!-- Detected devices will be shown here -->
+                        </div>
+                        <div class="device-confirmation-actions">
+                            <button id="confirmDevicesBtn" class="btn btn-primary">Confirm Devices</button>
+                            <button id="editDevicesBtn" class="btn btn-secondary">Edit</button>
+                        </div>
+                    </div>
+                    <div id="deviceEditForm" class="device-edit-form" hidden>
+                        <div class="form-group">
+                            <label for="pumpSelect">Pump Manufacturer:</label>
+                            <select id="pumpSelect">
+                                <option value="">-- Select pump --</option>
+                                <option value="tandem">Tandem</option>
+                                <option value="medtronic">Medtronic</option>
+                                <option value="omnipod">Omnipod</option>
+                                <option value="ypsomed">Ypsomed</option>
+                                <option value="roche">Roche</option>
+                                <option value="sooil">SooIL</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="cgmSelect">CGM Manufacturer:</label>
+                            <select id="cgmSelect">
+                                <option value="">-- Select CGM --</option>
+                                <option value="dexcom">Dexcom</option>
+                                <option value="libre">Freestyle Libre</option>
+                                <option value="guardian">Guardian</option>
+                            </select>
+                        </div>
+                        <div class="device-confirmation-actions">
+                            <button id="saveDevicesBtn" class="btn btn-primary">Save Devices</button>
+                            <button id="cancelEditBtn" class="btn btn-secondary">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="noDevicesMessage" class="info-box">No devices detected yet. Upload a device manual to get started.</div>
+            </section>
+
             <!-- Product Guides Section -->
             <section class="settings-section">
                 <h3>Your Product Guides</h3>
@@ -260,7 +338,9 @@
         </div>
     </div>
 
+    <!-- Markdown parser and HTML sanitizer -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

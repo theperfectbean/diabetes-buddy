@@ -1,0 +1,39 @@
+=== PubMed Research Articles ===
+=== Article 1: CGM Accuracy in Type 1 Diabetes ===
+PMID: 34567890
+Title: Real-time continuous glucose monitoring accuracy in adults with type 1 diabetes
+Journal: Diabetes Technology & Therapeutics, 2025
+
+Abstract: This multicenter study evaluated the accuracy of real-time continuous glucose monitoring (CGM) systems in 450 adults with type 1 diabetes over 3 months. Mean absolute relative difference (MARD) was 9.2% for the overall study population, meeting FDA accuracy requirements. CGM accuracy was highest in the euglycemic range (70-180 mg/dL) with MARD of 8.1%, compared to 11.4% in the hypoglycemic range (<70 mg/dL) and 10.9% in the hyperglycemic range (>180 mg/dL). Factors associated with improved accuracy included proper sensor placement, consistent calibration (for systems requiring calibration), and sensor age between days 2-10. Users experienced fewer sensor failures when rotation of insertion sites was practiced regularly.
+
+---
+=== Article 2: Carbohydrate Counting Accuracy ===
+PMID: 35678901
+Title: Accuracy of carbohydrate counting and its impact on glycemic control
+Journal: Journal of Diabetes Science and Technology, 2024
+
+Abstract: Carbohydrate counting accuracy was assessed in 230 adults with type 1 diabetes using multiple daily injections or insulin pump therapy. Participants estimated carbohydrate content of standardized meals, which was compared to laboratory analysis. Mean error was 23% ± 18%, with 45% of estimates differing from actual content by >20%. Carbohydrate counting accuracy correlated significantly with HbA1c (r=-0.42, p<0.001), with more accurate counters achieving better glycemic control (HbA1c 7.1% vs 7.8%, p<0.01). Common sources of error included portion size estimation, not accounting for fiber content, and underestimating carbohydrates in combination foods. Structured education programs improved counting accuracy by 31% on average.
+
+---
+=== Article 3: Insulin Sensitivity Variation ===
+PMID: 36789012
+Title: Diurnal variation in insulin sensitivity in type 1 diabetes
+Journal: Diabetes Care, 2025
+
+Abstract: This study examined circadian patterns of insulin sensitivity in 180 adults with type 1 diabetes using continuous glucose monitoring and insulin pump data. Insulin sensitivity varied significantly by time of day, with peak sensitivity occurring in the early morning (4-6am) and late evening (10pm-midnight), and lowest sensitivity in the mid-morning (8-11am) and early afternoon (2-4pm). The magnitude of variation averaged 34% between peak and nadir sensitivity times. Dawn phenomenon (early morning glucose rise despite stable insulin delivery) was observed in 68% of participants and correlated with cortisol elevation. These findings support time-of-day specific insulin-to-carb ratios and insulin sensitivity factors rather than single values.
+
+---
+=== Article 4: Exercise Effects on Glucose ===
+PMID: 37890123
+Title: Differential effects of aerobic vs. anaerobic exercise on glucose levels in type 1 diabetes
+Journal: Diabetologia, 2024
+
+Abstract: Twenty-five adults with type 1 diabetes using CGM completed both aerobic (45-minute moderate-intensity cycling) and anaerobic (high-intensity interval training) exercise sessions in randomized order. Aerobic exercise decreased glucose by an average of 68 mg/dL during activity, with continued decline for 90 minutes post-exercise. Anaerobic exercise initially increased glucose by 42 mg/dL due to catecholamine release, followed by gradual decline over 2-4 hours. Insulin sensitivity remained elevated for 18-24 hours following both exercise types, requiring 15-20% reduction in basal insulin rates during this period to prevent hypoglycemia. Exercise timing relative to meals significantly impacted glucose response, with pre-meal exercise causing larger glucose drops.
+
+---
+=== Article 5: Automated Insulin Delivery Systems ===
+PMID: 38901234
+Title: Safety and efficacy of hybrid closed-loop insulin delivery systems
+Journal: The Lancet Diabetes & Endocrinology, 2025
+
+Abstract: Meta-analysis of 15 randomized controlled trials (n=2,847) comparing hybrid closed-loop systems to sensor-augmented pump therapy in type 1 diabetes. Hybrid closed-loop therapy increased time-in-range (70-180 mg/dL) by 11.2% (95% CI: 9.1-13.3%, p<0.001) and reduced HbA1c by 0.46% (95% CI: 0.38-0.54%, p<0.001) compared to standard pump therapy. Time spent in hypoglycemia (<70 mg/dL) decreased by 1.3% (p<0.001), particularly overnight. No increase in severe hypoglycemia or diabetic ketoacidosis was observed. System usage exceeded 90% of time in 73% of participants. Factors predicting successful adoption included adequate diabetes education, realistic expectations, and strong support networks.

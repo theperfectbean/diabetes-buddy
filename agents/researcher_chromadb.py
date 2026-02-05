@@ -1,7 +1,7 @@
 """
 ChromaDB-based RAG Researcher Agent for Diabetes Buddy
 
-Fast local vector search replacing slow Gemini File API calls.
+Fast local vector search replacing remote file-based API calls.
 One-time PDF processing (~3min), then <5s queries forever.
 """
 
@@ -18,11 +18,17 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, List
 import hashlib
+import sys
 
 import chromadb
 from chromadb.config import Settings
 from .llm_provider import LLMFactory, GenerationConfig
 import PyPDF2
+
+import logging
+logger = logging.getLogger(__name__)
+
+USER_DEVICE_CONFIDENCE_BOOST = 0.35
 
 
 @dataclass
@@ -40,7 +46,7 @@ class ChromaDBBackend:
     ChromaDB-based research backend with local vector search.
 
     Processes PDFs once, stores embeddings locally, then performs
-    fast semantic search without repeated Gemini API calls.
+    fast semantic search without repeated remote API calls.
 
     PDFs are auto-discovered by scanning configured directories.
     """
@@ -68,9 +74,13 @@ class ChromaDBBackend:
         """
         # Get LLM provider (configured via LLM_PROVIDER env var)
         self.llm = LLMFactory.get_provider()
+        
+        # Use the same provider for embeddings (local embeddings in Groq provider)
+        self.embedding_llm = self.llm
+
         # Expose configured embedding model for diagnostics and downstream code
         try:
-            self.embedding_model = getattr(self.llm, "embedding_model", None) or (self.llm.get_model_info().model_name if hasattr(self.llm, 'get_model_info') else None)
+            self.embedding_model = getattr(self.embedding_llm, "embedding_model", None) or (self.embedding_llm.get_model_info().model_name if hasattr(self.embedding_llm, 'get_model_info') else None)
         except Exception:
             self.embedding_model = None
 
@@ -207,7 +217,7 @@ class ChromaDBBackend:
     
     def _embed_batch(self, texts: List[str]) -> List[List[float]]:
         """
-        Embed a batch of texts using Gemini.
+        Embed a batch of texts using local embeddings.
         
         Args:
             texts: List of text strings to embed
@@ -216,7 +226,7 @@ class ChromaDBBackend:
             List of embedding vectors
         """
         try:
-            return self.llm.embed_text(texts)
+            return self.embedding_llm.embed_text(texts)
         except Exception as e:
             print(f"Error embedding batch: {e}")
             # Retry with smaller batch on failure
@@ -265,6 +275,12 @@ class ChromaDBBackend:
             embeddings = self._embed_batch(batch_texts)
             all_embeddings.extend(embeddings)
             
+            # Log for each chunk in batch
+            for j, chunk in enumerate(batch):
+                chunk_num = i + j + 1
+                source_name = self.source_names.get(source_key, source_key)
+                logger.info(f"Indexed chunk {chunk_num}/{len(all_chunks)} for {source_name}")
+            
             # Show progress
             progress = min(i + batch_size, len(all_chunks))
             print(f"      {progress}/{len(all_chunks)} chunks embedded", end="\r")
@@ -298,12 +314,12 @@ class ChromaDBBackend:
     def _search_collection(self, source_key: str, query: str, top_k: int = 5) -> List[SearchResult]:
         """
         Search a ChromaDB collection for relevant chunks.
-        
+
         Args:
             source_key: Source collection to search
             query: Search query
             top_k: Number of results to return
-            
+
         Returns:
             List of SearchResult objects
         """
@@ -312,24 +328,29 @@ class ChromaDBBackend:
         except Exception as e:
             print(f"Warning: Collection '{source_key}' not found: {e}")
             return []
-        
+
         if collection.count() == 0:
             return []
-        
-        # Embed query
+
+        # Generate query embedding using same model as indexing (ensures dimension consistency)
         try:
-            query_embedding = self.llm.embed_text(query)
+            query_embedding = self.embedding_llm.embed_text([query])[0]
         except Exception as e:
             print(f"Error embedding query: {e}")
             return []
-        
-        # Search ChromaDB
+
+        # Search ChromaDB using pre-computed embedding (not query_texts)
+        # This ensures dimension consistency between indexing and querying
         try:
             results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=min(top_k, collection.count())
             )
         except Exception as e:
+            # Gracefully skip collections with embedding dimension mismatches
+            if "dimension" in str(e).lower():
+                logger.debug(f"Skipping collection {source_key}: embedding dimension mismatch")
+                return []
             print(f"Error querying collection: {e}")
             return []
         
@@ -344,20 +365,51 @@ class ChromaDBBackend:
                 # Distance is 0-2 for cosine, convert to 0-1 confidence
                 confidence = 1.0 - (distance / 2.0)
                 
+                # Add keyword matching bonus for better relevance
+                query_terms = query.lower().split()
+                doc_lower = doc.lower()
+                keyword_matches = sum(1 for term in query_terms if len(term) > 2 and term in doc_lower)
+                if keyword_matches > 0:
+                    # Boost by +0.1 per keyword match (max 3 keywords)
+                    keyword_boost = min(0.3, keyword_matches * 0.1)
+                    confidence = min(1.0, confidence + keyword_boost)
+                    logger.debug(f"Keyword boost: {keyword_matches} matches, +{keyword_boost:.2f}")
+
+                # Detect device collections - match common device patterns
+                device_patterns = [
+                    'camaps', 'cam_aps', 'fx', 'omnipod', 'tandem', 'control_iq', 'tslim',
+                    'medtronic', '780g', '770g', 'guardian', 'ilet', 'bionic',
+                    'dexcom', 'g6', 'g7', 'libre', 'freestyle',
+                    'ypsomed', 'ypso', 'mylife', 'loop', 'androidaps', 'openaps',
+                    'user-', 'user_'  # Also include user-prefixed collections
+                ]
+                source_key_lower = source_key.lower()
+                is_user_device = any(pattern in source_key_lower for pattern in device_patterns)
+                
+                if is_user_device:
+                    original_confidence = confidence
+                    confidence = min(1.0, confidence + USER_DEVICE_CONFIDENCE_BOOST)
+                    logger.debug(f"Device boost: {source_key} confidence {original_confidence:.3f} -> {confidence:.3f}")
+
                 source_name = self.source_names.get(source_key, source_key)
+                context = f"Retrieved from {source_name}"
+                if is_user_device:
+                    context = f"Retrieved from user device source: {source_name}"
+
                 search_results.append(SearchResult(
                     quote=doc,
                     page_number=metadata.get('page'),
                     confidence=confidence,
                     source=source_name,
-                    context=f"Retrieved from {source_name}"
+                    context=context
                 ))
         
         return search_results
     
-    def _synthesize_with_gemini(self, query: str, chunks: List[SearchResult]) -> str:
+    def _synthesize_with_llm(self, query: str, chunks: List[SearchResult]) -> str:
         """
-        Synthesize an answer using Gemini with retrieved chunks.
+        DEPRECATED: Use synthesize_answer() instead.
+        Synthesize an answer using the configured LLM with retrieved chunks.
         
         Args:
             query: User's question
@@ -366,16 +418,50 @@ class ChromaDBBackend:
         Returns:
             Synthesized answer
         """
+        return self.synthesize_answer(query, chunks, provider=None, model=None)
+
+    def synthesize_answer(
+        self,
+        query: str,
+        chunks: List[SearchResult],
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> dict:
+        """
+        Provider-agnostic synthesis of answers using retrieved chunks.
+        
+        Args:
+            query: User's question
+            chunks: Retrieved context chunks
+            provider: LLM provider (defaults to configured provider)
+            model: Specific model to use (optional)
+            
+        Returns:
+            Dict with keys: {answer, llm_provider, llm_model, tokens_used, estimated_cost, cache_enabled}
+        """
         if not chunks:
-            return "No relevant information found in the knowledge base for this query."
+            return {
+                "answer": "No relevant information found in the knowledge base for this query.",
+                "llm_provider": "none",
+                "llm_model": "none",
+                "tokens_used": {"input": 0, "output": 0},
+                "estimated_cost": 0.0,
+                "cache_enabled": False,
+            }
         
         # Build context from chunks
         context_parts = []
+        cache_tags = set()  # Track which chunks are cacheable
+        
         for i, chunk in enumerate(chunks, 1):
             page_info = f", Page {chunk.page_number}" if chunk.page_number else ""
             context_parts.append(
                 f"[Context {i}] ({chunk.source}{page_info}):\n{chunk.quote}\n"
             )
+            
+            # Tag chunks from ADA and guideline sources for caching
+            if any(tag in chunk.source.lower() for tag in ["ada", "guideline", "australian", "standard"]):
+                cache_tags.add(f"cacheable_{i}")
         
         context = "\n".join(context_parts)
         
@@ -396,17 +482,66 @@ Instructions:
 Your answer:"""
 
         try:
-            return self.llm.generate_text(
+            # Get or create LLM provider
+            if provider:
+                from .llm_provider import LLMFactory
+                LLMFactory.reset_provider()  # Reset to allow provider switch
+                llm = LLMFactory.get_provider(provider_type=provider)
+            else:
+                llm = self.llm
+            
+            # Track provider and model
+            provider_name = provider or (llm.provider_name if hasattr(llm, 'provider_name') else 'unknown')
+            model_name = model or (llm.model_name if hasattr(llm, 'model_name') else 'unknown')
+            
+            # Check if caching should be enabled (for guideline queries)
+            cache_enabled = len(cache_tags) > 0 and provider_name == "groq"
+            if cache_enabled:
+                os.environ["GROQ_ENABLE_CACHING"] = "true"
+            
+            # Generate answer
+            answer = llm.generate_text(
                 prompt=prompt,
                 config=GenerationConfig(temperature=0.7),
             )
+            
+            # Calculate token usage and cost
+            input_tokens = len(prompt.split()) * 1.3  # Rough estimate
+            output_tokens = len(answer.split()) * 1.3
+            estimated_cost = 0.0
+            
+            # If it's Groq, calculate actual cost
+            if provider_name == "groq" and hasattr(llm, 'calculate_cost'):
+                estimated_cost = llm.calculate_cost(int(input_tokens), int(output_tokens), model_name)
+                # Reduce cost by 50% if caching enabled and used
+                if cache_enabled:
+                    estimated_cost *= 0.75  # 25% reduction (conservative)
+            
+            return {
+                "answer": answer,
+                "llm_provider": provider_name,
+                "llm_model": model_name,
+                "tokens_used": {"input": int(input_tokens), "output": int(output_tokens)},
+                "estimated_cost": round(estimated_cost, 6),
+                "cache_enabled": cache_enabled,
+            }
+            
         except Exception as e:
-            print(f"Error generating answer: {e}")
+            logger.error(f"Error generating answer: {e}")
             # Fallback to formatted chunks
-            return "\n\n".join([
+            fallback_answer = "\n\n".join([
                 f"{chunk.quote} ({chunk.source}, Page {chunk.page_number})"
                 for chunk in chunks
             ])
+            return {
+                "answer": fallback_answer,
+                "llm_provider": "fallback",
+                "llm_model": "formatted_chunks",
+                "tokens_used": {"input": 0, "output": 0},
+                "estimated_cost": 0.0,
+                "cache_enabled": False,
+            }
+
     
     def search_pdf_collection(self, source_key: str, query: str, top_k: int = 5) -> List[SearchResult]:
         """
@@ -652,163 +787,6 @@ Your answer:"""
 
         return search_results
 
-    def search_openaps_docs(self, query: str, top_k: int = 5) -> List[SearchResult]:
-        """
-        Search OpenAPS community documentation (OpenAPS, AndroidAPS, Loop).
-
-        Args:
-            query: Search query
-            top_k: Number of results to return
-
-        Returns:
-            List of SearchResult objects from community docs
-        """
-        try:
-            collection = self.chroma_client.get_collection(name="openaps_docs")
-        except Exception:
-            # Collection doesn't exist yet
-            return []
-
-        if collection.count() == 0:
-            return []
-
-        # Search ChromaDB
-        try:
-            results = collection.query(
-                query_texts=[query],
-                n_results=min(top_k, collection.count())
-            )
-        except Exception as e:
-            print(f"Error querying openaps_docs collection: {e}")
-            return []
-
-        # Convert to SearchResult objects
-        search_results = []
-        if results['documents'] and results['documents'][0]:
-            for i, doc in enumerate(results['documents'][0]):
-                metadata = results['metadatas'][0][i]
-                distance = results['distances'][0][i] if results['distances'] else 0.5
-
-                # Use distance-based confidence (cosine: 0=identical, 2=opposite)
-                # Use distance-based confidence scaled by source trustworthiness (0.6 for community docs)
-                source_trust = 0.6
-                query_relevance = 1.0 - (distance / 2.0)
-                confidence = query_relevance * source_trust
-
-                search_results.append(SearchResult(
-                    quote=doc,
-                    page_number=None,
-                    confidence=confidence,
-                    source=f"OpenAPS Docs ({metadata.get('source_repo', 'unknown')})",
-                    context=metadata.get('file_path', '')
-                ))
-
-        return search_results
-
-    def search_loop_docs(self, query: str, top_k: int = 5) -> List[SearchResult]:
-        """
-        Search Loop documentation.
-
-        Args:
-            query: Search query
-            top_k: Number of results to return
-
-        Returns:
-            List of SearchResult objects from Loop docs
-        """
-        try:
-            collection = self.chroma_client.get_collection(name="loop_docs")
-        except Exception:
-            # Collection doesn't exist yet
-            return []
-
-        if collection.count() == 0:
-            return []
-
-        # Search ChromaDB
-        try:
-            results = collection.query(
-                query_texts=[query],
-                n_results=min(top_k, collection.count())
-            )
-        except Exception as e:
-            print(f"Error querying loop_docs collection: {e}")
-            return []
-
-        # Convert to SearchResult objects
-        search_results = []
-        if results['documents'] and results['documents'][0]:
-            for i, doc in enumerate(results['documents'][0]):
-                metadata = results['metadatas'][0][i]
-                distance = results['distances'][0][i] if results['distances'] else 0.5
-
-                # Use distance-based confidence scaled by source trustworthiness (0.6)
-                source_trust = 0.6
-                query_relevance = 1.0 - (distance / 2.0)
-                confidence = query_relevance * source_trust
-
-                search_results.append(SearchResult(
-                    quote=doc,
-                    page_number=None,
-                    confidence=confidence,
-                    source=f"Loop Docs ({metadata.get('source_repo', 'unknown')})",
-                    context=metadata.get('file_path', '')
-                ))
-
-        return search_results
-
-    def search_androidaps_docs(self, query: str, top_k: int = 5) -> List[SearchResult]:
-        """
-        Search AndroidAPS documentation.
-
-        Args:
-            query: Search query
-            top_k: Number of results to return
-
-        Returns:
-            List of SearchResult objects from AndroidAPS docs
-        """
-        try:
-            collection = self.chroma_client.get_collection(name="androidaps_docs")
-        except Exception:
-            # Collection doesn't exist yet
-            return []
-
-        if collection.count() == 0:
-            return []
-
-        # Search ChromaDB
-        try:
-            results = collection.query(
-                query_texts=[query],
-                n_results=min(top_k, collection.count())
-            )
-        except Exception as e:
-            print(f"Error querying androidaps_docs collection: {e}")
-            return []
-
-        # Convert to SearchResult objects
-        search_results = []
-        if results['documents'] and results['documents'][0]:
-            for i, doc in enumerate(results['documents'][0]):
-                metadata = results['metadatas'][0][i]
-                distance = results['distances'][0][i] if results['distances'] else 0.5
-
-                # Use distance-based confidence scaled by source trustworthiness (0.6)
-                source_trust = 0.6
-                query_relevance = 1.0 - (distance / 2.0)
-                confidence = query_relevance * source_trust
-
-                search_results.append(SearchResult(
-                    quote=doc,
-                    page_number=None,
-                    confidence=confidence,
-                    source=f"AndroidAPS Docs ({metadata.get('source_repo', 'unknown')})",
-                    context=metadata.get('file_path', '')
-                ))
-
-        return search_results
-
     def search_wikipedia_education(self, query: str, top_k: int = 5) -> List[SearchResult]:
         """
         Search Wikipedia T1D education content.
@@ -890,9 +868,6 @@ Your answer:"""
             'ada_standards': self.search_ada_standards,
             'australian_guidelines': self.search_australian_guidelines,
             'research_papers': self.search_research_papers,
-            'openaps_docs': self.search_openaps_docs,
-            'loop_docs': self.search_loop_docs,
-            'androidaps_docs': self.search_androidaps_docs,
             'wikipedia_education': self.search_wikipedia_education,
         }
 
@@ -969,7 +944,7 @@ Your answer:"""
         # Get embeddings for all results
         try:
             texts = [r.quote[:500] for r in results]  # Use first 500 chars
-            embeddings = self.llm.embed_text(texts)
+            embeddings = self.embedding_llm.embed_text(texts)
         except Exception:
             # If embedding fails, return original results
             return results
@@ -1101,7 +1076,7 @@ Your answer:"""
 
     def search_with_synthesis(self, source_key: str, query: str, top_k: int = 5) -> str:
         """
-        Search and synthesize answer with Gemini.
+        Search and synthesize answer with the configured LLM.
         
         Args:
             source_key: Source to search
@@ -1112,7 +1087,7 @@ Your answer:"""
             Synthesized answer string
         """
         chunks = self._search_collection(source_key, query, top_k)
-        return self._synthesize_with_gemini(query, chunks)
+        return self._synthesize_with_llm(query, chunks)
 
 
 class ResearcherAgent:
@@ -1131,6 +1106,7 @@ class ResearcherAgent:
             use_chromadb: Use ChromaDB backend (True) or legacy File API (False)
         """
         self.use_chromadb = use_chromadb
+        self.personalization_manager = None
         
         if use_chromadb:
             self.backend = ChromaDBBackend(project_root=project_root)
@@ -1138,6 +1114,10 @@ class ResearcherAgent:
             # Import legacy backend
             from .researcher import ResearcherAgent as LegacyResearcher
             self.backend = LegacyResearcher(project_root=project_root)
+
+    def set_personalization_manager(self, personalization_manager) -> None:
+        """Attach a personalization manager for device-based boosts."""
+        self.personalization_manager = personalization_manager
 
     def search_ada_standards(self, query: str, sections: List[str] = None, top_k: int = 5) -> List[SearchResult]:
         """
@@ -1206,20 +1186,7 @@ class ResearcherAgent:
         else:
             return []
 
-    def search_openaps_docs(self, query: str) -> List[SearchResult]:
-        """
-        Search OpenAPS community documentation.
 
-        Args:
-            query: Search query
-
-        Returns:
-            List of SearchResult objects from OpenAPS docs
-        """
-        if self.use_chromadb:
-            return self.backend.search_openaps_docs(query)
-        else:
-            return []
 
     def search_wikipedia_education(self, query: str) -> List[SearchResult]:
         """
@@ -1246,8 +1213,8 @@ class ResearcherAgent:
         Search ALL collections and return merged, deduplicated results.
 
         This is the recommended method for comprehensive queries that should
-        search across all knowledge sources (ada_guidelines, openaps_docs,
-        pubmed_research, glooko_data, etc.).
+        search across all knowledge sources (ada_guidelines, pubmed_research,
+        wikipedia_education, device_manuals, etc.).
 
         Args:
             query: Search query
@@ -1317,7 +1284,7 @@ class ResearcherAgent:
             "ada_standards": self.search_ada_standards,
             "australian_guidelines": self.search_australian_guidelines,
             "research_papers": self.search_research_papers,
-            "openaps_docs": self.search_openaps_docs,
+            
             "wikipedia_education": self.search_wikipedia_education,
             "pubmed_research": self.search_research_papers,  # Alias
             "glooko_data": lambda q: [],  # Placeholder - handled by GlookoQueryAgent
@@ -1341,18 +1308,12 @@ class ResearcherAgent:
         return results
 
 
-    def query_knowledge(self, query: str, top_k: int = 5) -> List[SearchResult]:
+    def query_knowledge(self, query: str, top_k: int = 5, session_id: Optional[str] = None) -> List[SearchResult]:
         """
-        Query the new documentation collections for diabetes management knowledge.
+        Query ALL documentation collections for diabetes management knowledge.
 
-        Searches the following collections with specified confidence levels:
-        - openaps_docs (258 chunks, confidence=0.6)
-        - loop_docs (393 chunks, confidence=0.6)
-        - androidaps_docs (384 chunks, confidence=0.6)
-        - research_papers (39 chunks, confidence=0.7)
-        - wikipedia_education (42 chunks, confidence=0.6)
-
-        All collections are queried in parallel and results are merged by confidence score.
+        Dynamically discovers and searches all ChromaDB collections (excluding system collections).
+        User device collections receive automatic confidence boost for personalized responses.
 
         Args:
             query: Search query
@@ -1364,31 +1325,50 @@ class ResearcherAgent:
         if not self.use_chromadb:
             return []
 
-        # Collections to search (source trust applied in individual search methods):
-        # - openaps_docs, loop_docs, androidaps_docs: 0.6 trust (community docs, lower priority)
-        # - research_papers: 0.7 trust (peer-reviewed but abstracts only)
-        # - wikipedia_education: 0.8 trust (educational, may be edited)
-        search_methods = [
-            ('openaps_docs', self.backend.search_openaps_docs),
-            ('loop_docs', self.backend.search_loop_docs),
-            ('androidaps_docs', self.backend.search_androidaps_docs),
-            ('research_papers', self.backend.search_research_papers),
-            ('wikipedia_education', self.backend.search_wikipedia_education),
-        ]
-
         all_results = []
 
-        # Search all collections
-        for collection_name, search_fn in search_methods:
+        # Dynamically discover all collections in ChromaDB
+        try:
+            all_collections = self.backend.chroma_client.list_collections()
+            searchable_collections = [
+                col.name for col in all_collections
+                if not col.name.startswith('_')  # Exclude system collections
+                and col.count() > 0  # Only search non-empty collections
+            ]
+            
+            logger.info(f"Searching {len(searchable_collections)} collections: {', '.join(searchable_collections[:10])}{'...' if len(searchable_collections) > 10 else ''}")
+            
+        except Exception as e:
+            logger.error(f"Could not list ChromaDB collections: {e}")
+            searchable_collections = []
+
+        # Search each collection
+        collection_results = {}
+        for collection_name in searchable_collections:
             try:
-                results = search_fn(query, top_k)
+                results = self.backend._search_collection(collection_name, query, top_k)
+                collection_results[collection_name] = results
                 all_results.extend(results)
+                if results:
+                    logger.debug(f"  {collection_name}: {len(results)} results (max conf: {max(r.confidence for r in results):.3f})")
             except Exception as e:
-                print(f"Error searching {collection_name}: {e}")
+                logger.warning(f"Error searching {collection_name}: {e}")
+
+
+        if self.personalization_manager and session_id:
+            try:
+                all_results = self.personalization_manager.apply_device_boost(
+                    all_results,
+                    session_id=session_id,
+                )
+            except Exception as exc:
+                logger.warning(f"Personalization boost failed: {exc}")
 
         # Sort by confidence (already includes source trustworthiness) and return top results
         all_results.sort(key=lambda x: x.confidence, reverse=True)
-        return all_results[:top_k]
+        final_results = all_results[:top_k]
+        
+        return final_results
 
 
 if __name__ == "__main__":

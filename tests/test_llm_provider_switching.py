@@ -1,9 +1,10 @@
 import os
 import sys
 from pathlib import Path
+import pytest
 # Ensure project root is on sys.path when running pytest directly
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from agents.llm_provider import LLMFactory, LLMProvider, GenerationConfig
+from agents.llm_provider import LLMFactory, LLMProvider, LLMProviderError, GenerationConfig
 
 
 class MockProvider(LLMProvider):
@@ -74,17 +75,14 @@ def test_factory_returns_registered_provider_and_generate_embed():
         LLMFactory.reset_provider()
 
 
-def test_factory_falls_back_to_gemini_when_init_fails():
+def test_factory_raises_on_init_failure():
     orig_registry = LLMFactory._provider_registry.copy()
     LLMFactory.reset_provider()
     try:
-        # register a fake gemini and a broken provider
-        LLMFactory.register_provider("gemini", MockProvider)
         LLMFactory.register_provider("broken", BrokenProvider)
 
-        # asking for 'broken' should fall back to gemini
-        p = LLMFactory.get_provider(provider_type="broken")
-        assert isinstance(p, MockProvider)
+        with pytest.raises(LLMProviderError, match="Failed to initialize provider"):
+            LLMFactory.get_provider(provider_type="broken")
     finally:
         LLMFactory._provider_registry = orig_registry
         LLMFactory.reset_provider()

@@ -157,47 +157,55 @@ class TestRetrievalQuality:
             agent.llm = mock_llm
             return agent
 
-    def test_clinical_query_prioritizes_ada(self, agent):
+    @pytest.fixture
+    def agent_with_kb(self, researcher_with_test_data, mock_llm):
+        """Create unified agent backed by populated ChromaDB."""
+        agent = UnifiedAgent()
+        agent.researcher = researcher_with_test_data
+        agent.llm = mock_llm
+        return agent
+
+    def test_clinical_query_prioritizes_ada(self, agent_with_kb):
         """Test that clinical queries prioritize ADA Standards (confidence=1.0)."""
         query = "What HbA1c target for newly diagnosed type 1 diabetes?"
 
         # Mock the LLM to return a response that cites the sources
-        agent.llm.generate_text.return_value = """
+        agent_with_kb.llm.generate_text.return_value = """
         Based on the ADA Standards Section 6, for most nonpregnant adults with type 1 diabetes,
         an A1C target of <7% (53 mmol/mol) is recommended.
 
         This is the authoritative clinical guideline for glycemic targets.
         """
 
-        response = agent.process(query)
+        response = agent_with_kb.process(query)
 
         assert response.success
         assert "ADA Standards Section 6" in response.answer
-        assert "knowledge_base" in response.sources_used
+        assert "rag" in response.sources_used
 
-    def test_practical_query_prioritizes_openaps(self, agent):
+    def test_practical_query_prioritizes_openaps(self, agent_with_kb):
         """Test that practical queries prioritize OpenAPS docs (confidence=0.8)."""
         query = "How to set basal rates for overnight control?"
 
-        agent.llm.generate_text.return_value = """
+        agent_with_kb.llm.generate_text.return_value = """
         For setting basal rates overnight, the OpenAPS documentation recommends:
         Start with current pump settings and test one basal rate at a time.
 
         The ADA Standards also support individualizing insulin regimens.
         """
 
-        response = agent.process(query)
+        response = agent_with_kb.process(query)
 
         assert response.success
         assert "OpenAPS" in response.answer
         assert "ADA Standards" in response.answer
-        assert "knowledge_base" in response.sources_used
+        assert "rag" in response.sources_used
 
-    def test_hybrid_query_blends_sources(self, agent):
+    def test_hybrid_query_blends_sources(self, agent_with_kb):
         """Test that hybrid queries blend ADA, OpenAPS, and research sources."""
         query = "CGM accuracy and calibration best practices"
 
-        agent.llm.generate_text.return_value = """
+        agent_with_kb.llm.generate_text.return_value = """
         CGM accuracy and calibration best practices combine clinical guidelines and practical experience:
 
         From ADA Standards Section 7: CGM accuracy requirements for clinical decision making.
@@ -205,36 +213,36 @@ class TestRetrievalQuality:
         From research: MARD <10% for optimal performance.
         """
 
-        response = agent.process(query)
+        response = agent_with_kb.process(query)
 
         assert response.success
         assert "ADA Standards Section 7" in response.answer
         assert "OpenAPS" in response.answer
         assert "research" in response.answer or "PubMed" in response.answer
-        assert "knowledge_base" in response.sources_used
+        assert "rag" in response.sources_used
 
-    def test_personal_data_query_with_glooko(self, agent):
+    def test_personal_data_query_with_glooko(self, agent_with_kb):
         """Test personal data queries integrate Glooko patterns with clinical advice."""
         query = "Why do I spike after breakfast?"
 
         # Mock Glooko context
-        agent._load_glooko_context = Mock(return_value="""
+        agent_with_kb._load_glooko_context = Mock(return_value="""
         Recent glucose data shows consistent spikes 2 hours after breakfast meals.
         Average post-breakfast glucose: 180-220 mg/dL.
         """)
 
-        agent.llm.generate_text.return_value = """
+        agent_with_kb.llm.generate_text.return_value = """
         Your glucose data shows spikes after breakfast, which suggests carb counting accuracy issues.
 
         From ADA Section 5: Carbohydrate counting is fundamental to intensive insulin therapy.
         From OpenAPS: Extended boluses can help with meals that digest slowly.
         """
 
-        response = agent.process(query)
+        response = agent_with_kb.process(query)
 
         assert response.success
         assert "glooko" in response.sources_used
-        assert "knowledge_base" in response.sources_used
+        assert "rag" in response.sources_used
         assert "carb counting" in response.answer.lower()
         assert "ADA Section 5" in response.answer
 

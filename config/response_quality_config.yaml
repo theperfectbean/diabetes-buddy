@@ -1,0 +1,45 @@
+# Response Quality Evaluator Configuration
+# Groq-only evaluator with retry, caching, and error handling
+
+evaluation:
+  # LLM provider
+  provider: "groq"               # Groq-only setup
+
+  # Retry configuration
+  max_retries: 2                  # Number of retry attempts
+  retry_delay_seconds: 1          # Wait between retries
+
+  # Caching configuration
+  cache_enabled: true             # Enable evaluation result caching
+  cache_max_size: 1000            # Max cached evaluations (LRU eviction)
+
+  # Token budget tracking for Groq
+  token_budget_daily: 200000      # Daily token limit for Groq
+  token_warning_threshold: 190000 # Warn when approaching limit
+
+  # Logging paths
+  log_path: "data/quality_scores.csv"
+  error_log_path: "data/evaluation_errors.csv"
+
+  # Quality thresholds
+  min_acceptable_score: 3.0       # Minimum acceptable dimension score
+  alert_on_score_below: 2.5       # Alert threshold for low quality
+
+# Provider-specific configurations (optional overrides)
+providers:
+  groq:
+    timeout: 30                   # Seconds before timeout
+    temperature: 0.1              # Temperature for generation
+    max_tokens: 2000              # Max tokens in response
+
+# Feature flags
+features:
+  error_logging: true             # Log evaluation errors
+  graceful_degradation: true      # Return None instead of 0.0 on failure
+# Alert configuration
+alerts:
+  enabled: true
+  log_errors_separately: true
+  channels:
+    - file  # Log errors to file
+    # - email  # Could add email alerts (not implemented)

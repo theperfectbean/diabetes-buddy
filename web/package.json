@@ -1,0 +1,13 @@
+{
+  "name": "web-render-test",
+  "version": "1.0.0",
+  "description": "Test for web rendering",
+  "main": "test.js",
+  "scripts": {
+    "test": "node tests/web_render_test.js"
+  },
+  "dependencies": {
+    "jsdom": "^20.0.0",
+    "marked": "^9.0.0"
+  }
+}

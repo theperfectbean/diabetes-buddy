@@ -1,0 +1,99 @@
+=== OpenAPS Documentation ===
+=== Basal Rate Testing and Optimization ===
+Page 78
+
+OpenAPS basal rate testing: Start with current pump settings and test one basal rate at a time. Test basal rates by fasting for at least 4 hours before the time segment you're testing, then observe glucose levels without food or bolus insulin for 4-6 hours.
+
+A properly set basal rate should keep your glucose level within 30 mg/dL of where it started during the test period. If glucose rises more than 30 mg/dL, increase the basal rate. If it drops more than 30 mg/dL, decrease the basal rate.
+
+Test basal rates in segments: overnight (midnight-6am), morning (6am-noon), afternoon (noon-6pm), and evening (6pm-midnight). Many people need different basal rates for different times of day.
+
+---
+=== CGM Calibration Best Practices ===
+Page 34
+
+OpenAPS calibration best practices: Calibrate when glucose is stable, ideally with a flat trend arrow. Avoid calibrating when glucose is rising or falling rapidly, as this can introduce error into the CGM readings.
+
+For optimal accuracy, calibrate at different glucose levels (both high and low ranges) rather than always calibrating at the same target. This helps the CGM system understand your glucose-sensor relationship across the full range.
+
+If you get an unexpectedly high or low CGM reading that doesn't match how you feel, wait 15 minutes and recheck with a fingerstick before calibrating. CGM can lag behind blood glucose by 10-15 minutes.
+
+---
+=== Pattern Analysis and Insulin Adjustments ===
+Page 156
+
+Pattern analysis: Glucose spikes 2 hours post-meal suggest carb counting accuracy issues or incorrect insulin-to-carb ratios. If you consistently spike after specific meals, consider adjusting your I:C ratio for those meals specifically.
+
+Extended boluses can help with meals that digest slowly (high fat or high protein). For pizza or pasta, consider using a combination bolus: 50-70% upfront, remainder delivered over 2-3 hours.
+
+Dawn phenomenon (early morning glucose rise) is common and usually requires higher basal rates or a small correction bolus in the early morning hours (typically 4-7am).
+
+---
+=== Autosens and ISF Adjustments ===
+Page 112
+
+Autosens (autosensitivity detection) tracks your recent history to detect changes in insulin sensitivity. If you've been running consistently high or low, autosens will automatically adjust basal rates, ISF, and I:C ratios.
+
+Insulin sensitivity factors (ISF) should be tested when glucose is high and no insulin is active (IOB=0). Take a correction bolus and observe the glucose drop over 4-5 hours. The actual drop divided by the insulin given equals your true ISF.
+
+Most people need different ISF values for different times of day. Many people are more insulin sensitive in the early morning and late evening, requiring higher ISF values (one unit drops glucose more).
+
+---
+=== Safe Looping Practices ===
+Page 89
+
+OpenAPS safe looping: Always verify pump settings (basal rates, I:C ratios, ISF) are correct before enabling closed loop. The algorithm can only work with the settings you provide.
+
+Set appropriate max basal and max IOB limits. Max basal should typically be no more than 3-4x your highest scheduled basal rate. Max IOB should start conservative (2-3 hours of basal) and increase gradually as you gain confidence.
+
+Monitor the system regularly during the first weeks. Check that automatic adjustments make sense given your glucose trends. If the loop frequently maxes out temp basals or hits safety limits, your underlying settings likely need adjustment.
+
+---
+=== Troubleshooting Common Issues ===
+Page 145
+
+Compression lows: If CGM shows low glucose while sleeping but you feel fine and fingerstick is normal, you may be compressing the sensor. Try sleeping on the opposite side or moving the sensor to a different site.
+
+Sensor failures: Sensors typically last 7-14 days depending on the model. If you consistently get sensor errors before the expected lifetime, consider whether insertion technique, site location, or skin preparation could be improved.
+
+When CGM and fingerstick disagree by >20%, trust the fingerstick. Calibrate the CGM if needed (for systems that allow calibration) or wait for the next sensor reading to see if they converge.
+
+---
+=== Meal Dosing Strategies ===
+Page 98
+
+Pre-bolusing (taking insulin 15-20 minutes before eating) can significantly reduce post-meal spikes. The optimal pre-bolus timing depends on your pre-meal glucose and insulin type.
+
+If starting glucose is high, pre-bolus 20-30 minutes early. If glucose is in target, 15 minutes is typical. If glucose is low or trending down, wait to pre-bolus until you start eating or even dose after the first few bites.
+
+For high-fat or high-protein meals, consider that fat and protein convert to glucose slowly over 4-8 hours. Extended boluses or splitting the dose (some upfront, some 2-3 hours later) can help avoid later spikes.
+
+---
+=== Exercise and Activity Management ===
+Page 167
+
+Exercise effects on glucose vary by activity type. Aerobic exercise (running, cycling) typically lowers glucose, while anaerobic exercise (weightlifting, sprinting) can raise it due to adrenaline.
+
+Before aerobic exercise, consider reducing basal rate 1-2 hours before activity and/or consuming 15-30g of carbs. Many loopers create exercise profiles with reduced basal rates and higher glucose targets.
+
+After intense exercise, insulin sensitivity can remain elevated for 6-24 hours. You may need lower basal rates or carb ratios during this recovery period to avoid delayed hypoglycemia.
+
+---
+=== Sick Day Management ===
+Page 189
+
+During illness, insulin needs typically increase even if you're not eating normally. Stress hormones and inflammation can raise glucose significantly.
+
+Check glucose and ketones every 2-4 hours during illness. If ketones are present (>0.6 mmol/L blood ketones), increase insulin via correction boluses and temporary basal increases.
+
+If you can't keep food down, sip sugar-containing fluids to prevent both hypoglycemia and ketone production. Continue insulin at minimum basal rates even when not eating.
+
+---
+=== Overnight Glucose Control ===
+Page 201
+
+Testing overnight basal rates: Go to bed with glucose in target and no active insulin (last meal 4+ hours ago, no corrections in last 4 hours). Check glucose at bedtime, 3am, and waking.
+
+If glucose rises overnight without food, basal rates are too low. If glucose drops overnight, basal rates are too high. Adjust the basal rate for the time segment where the change occurs.
+
+Many people need higher basal rates in the early morning (4-7am) due to dawn phenomenon. Some pumps and loopers use scheduled basal increases during these hours.

@@ -1,2 +1,0 @@
-Starting OpenAPS chunking: start-index=0, num-files=1
-Processing file 1/1: docs/api/index.rst

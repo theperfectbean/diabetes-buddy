@@ -1,11 +1,9 @@
 # Provider adapters and SDKs (optional)
-google-genai
 openai
 anthropic
 ollama
 
-# Embeddings and local model runtimes (heavy; optional)
-sentence-transformers
+# Embeddings and local model runtimes (optional overrides)
 torch
 transformers
 

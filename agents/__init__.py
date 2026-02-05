@@ -6,6 +6,7 @@ from . import network  # noqa: F401
 from .researcher import ResearcherAgent, SearchResult
 from .triage import TriageAgent, TriageResponse, Classification, QueryCategory
 from .safety import SafetyAuditor, SafeResponse, AuditResult, SafetyFinding, Severity
+from .safety_tiers import SafetyTier, TierAction, TierDecision
 from .glooko_query import GlookoQueryAgent, QueryIntent, QueryResult
 from .unified_agent import UnifiedAgent, UnifiedResponse
 from .data_ingestion import (
@@ -42,6 +43,9 @@ __all__ = [
     "AuditResult",
     "SafetyFinding",
     "Severity",
+    "SafetyTier",
+    "TierAction",
+    "TierDecision",
     "GlookoQueryAgent",
     "QueryIntent",
     "QueryResult",

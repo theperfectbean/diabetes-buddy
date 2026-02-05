@@ -2,7 +2,7 @@
 Triage Agent for Diabetes Buddy
 
 Routes user queries to appropriate knowledge sources based on classification.
-Uses Gemini for lightweight query analysis.
+Uses the configured LLM for lightweight query analysis.
 """
 
 # Force IPv4 before any Google API imports
@@ -12,36 +12,48 @@ import os
 import json
 import sys
 import time
+import logging
 from dataclasses import dataclass, field
 from typing import Optional
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 from .llm_provider import LLMFactory, GenerationConfig
 
 # Try ChromaDB backend first, fallback to legacy File API
 try:
     from .researcher_chromadb import ResearcherAgent, SearchResult
+
     CHROMADB_AVAILABLE = True
 except ImportError:
     from .researcher import ResearcherAgent, SearchResult
+
     CHROMADB_AVAILABLE = False
     import sys
-    print("⚠️  ChromaDB not installed. Using legacy File API (slower).", file=sys.stderr)
+
+    print(
+        "⚠️  ChromaDB not installed. Using legacy File API (slower).", file=sys.stderr
+    )
     print("   Install with: pip install chromadb", file=sys.stderr)
 
 
 class QueryCategory(Enum):
     """Categories for routing queries to knowledge sources."""
+
     GLOOKO_DATA = "glooko_data"  # Personal Glooko diabetes data queries
-    CLINICAL_GUIDELINES = "clinical_guidelines"  # Evidence-based clinical recommendations
+    CLINICAL_GUIDELINES = (
+        "clinical_guidelines"  # Evidence-based clinical recommendations
+    )
     USER_SOURCES = "user_sources"  # User-uploaded product manuals
     KNOWLEDGE_BASE = "knowledge_base"  # Public knowledge (OpenAPS, Loop, etc.)
-    HYBRID = "hybrid"      # Spans multiple domains
+    HYBRID = "hybrid"  # Spans multiple domains
 
 
 @dataclass
 class Classification:
     """Query classification result."""
+
     category: QueryCategory
     confidence: float
     reasoning: str
@@ -51,6 +63,7 @@ class Classification:
 @dataclass
 class TriageResponse:
     """Structured response from the Triage Agent."""
+
     query: str
     classification: Classification
     results: dict[str, list[SearchResult]]
@@ -66,6 +79,36 @@ class TriageAgent:
     # Confidence threshold for routing decisions
     CONFIDENCE_THRESHOLD = 0.7
 
+    # Keywords for complex meal management queries
+    # Identifies slow-carb, high-fat meals that cause delayed glucose spikes
+    COMPLEX_MEAL_KEYWORDS = {
+        # Food types
+        "food_types": [
+            "pizza", "pasta", "chinese food", "fried", "fatty", "creamy", "cheese",
+            "slow carb", "high fat", "protein", "ice cream", "chow mein", "pad thai",
+            "donuts", "pastry", "baked goods", "fries", "burger", "pho", "ramen",
+            "meals", "meal", "food", "eating",  # Generic meal/food references
+        ],
+        # Symptoms/temporal patterns indicating delayed absorption
+        "delayed_patterns": [
+            "delayed spike", "delayed high", "hours later", "overnight spike", "slow rise",
+            "still rising", "keeps going up", "spike after", "hours after eating",
+            "6 hours", "5 hours", "4 hours", "3 hours", "2 hours later",
+            "blood sugar keeps rising", "won't come down", "prolonged high", "continues to rise",
+            "manage", "handle", "absorb",  # Action words for meal management
+            "go high", "goes high", "going high", "get high",  # User phrasing for glucose rise
+            "during the night", "at night", "nighttime",  # Temporal indicators
+            "deal with", "tend to", "keep", "still",  # Common user expressions
+        ],
+        # Management/technique terms
+        "management_terms": [
+            "extended bolus", "combination bolus", "split dose", "dual wave",
+            "slowly absorbed meal", "fat and protein", "meal boost", "ease-off",
+            "carb entry", "extended delivery", "split percentage", "gradual delivery",
+            "meal feature",  # General meal feature inquiry
+        ]
+    }
+
     # Category descriptions for the classifier
     CATEGORY_DESCRIPTIONS = {
         "glooko_data": "Personal diabetes data queries about user's own glucose readings, time in range, averages, patterns, trends from uploaded Glooko export files. Keywords: my glucose, my blood sugar, my time in range, my readings, last week, how many times, average, trend, pattern, dawn phenomenon, post-meal spike, when do I, do I experience, my lows, my highs, my hypos, typically, usually. IMPORTANT: Any question using 'I' or 'my' that asks about patterns, timing, frequency, or personal glucose behavior should be classified as glooko_data.",
@@ -73,6 +116,7 @@ class TriageAgent:
         "user_sources": "Questions about user-uploaded device manuals and product guides. Pump operation, CGM usage, device-specific features.",
         "knowledge_base": "General diabetes management questions answered from public knowledge sources (OpenAPS, Loop, AndroidAPS, Wikipedia, PubMed research)",
         "hybrid": "Questions spanning multiple domains that need information from more than one source",
+        "meal_management_complex": "Queries about managing slow-carb or high-fat foods that cause delayed glucose spikes. Examples: pizza, pasta, Chinese food, fried foods. May ask about extended bolus, combination bolus, or slowly absorbed meal features.",
     }
 
     def __init__(self, project_root=None):
@@ -96,6 +140,16 @@ class TriageAgent:
         Returns:
             Classification with category, confidence, and reasoning
         """
+        # First, check for complex meal management queries
+        meal_classification = self._detect_meal_management_query(query)
+        if meal_classification:
+            logger.info(
+                f"[CLASSIFY] Query routed to {meal_classification.category.value} via meal detection | "
+                f"confidence={meal_classification.confidence:.2f} | "
+                f"reasoning='{meal_classification.reasoning}'"
+            )
+            return meal_classification
+
         classification_prompt = f"""You are a query classifier for a diabetes management assistant.
 
 Classify the following query into ONE primary category:
@@ -156,6 +210,13 @@ Rules:
             # Apply keyword fallback to catch personal data queries the LLM might miss
             classification = self._apply_glooko_fallback(query, classification)
 
+            logger.info(
+                f"[CLASSIFY] Query classified as {classification.category.value} | "
+                f"confidence={classification.confidence:.2f} | "
+                f"reasoning='{classification.reasoning}' | "
+                f"secondary={[c.value for c in classification.secondary_categories]}"
+            )
+
             return classification
 
         except Exception as e:
@@ -167,7 +228,9 @@ Rules:
                 secondary_categories=[],
             )
 
-    def _apply_glooko_fallback(self, query: str, classification: Classification) -> Classification:
+    def _apply_glooko_fallback(
+        self, query: str, classification: Classification
+    ) -> Classification:
         """
         Apply keyword-based fallback to ensure personal data queries go to Glooko.
 
@@ -178,24 +241,86 @@ Rules:
 
         # Strong indicators of personal data queries
         personal_data_phrases = [
-            "my data", "my readings", "my glucose", "my blood sugar",
-            "my numbers", "my levels", "my results", "my cgm",
-            "my time in range", "my tir", "my lows", "my highs",
-            "look at my", "analyze my", "check my", "review my",
-            "based on my", "from my", "in my data", "my glooko",
-            "my patterns", "my trends", "my average",
+            "my data",
+            "my readings",
+            "my glucose",
+            "my blood sugar",
+            "my numbers",
+            "my levels",
+            "my results",
+            "my cgm",
+            "my time in range",
+            "my tir",
+            "my lows",
+            "my highs",
+            "look at my",
+            "analyze my",
+            "check my",
+            "review my",
+            "based on my",
+            "from my",
+            "in my data",
+            "my glooko",
+            "my patterns",
+            "my trends",
+            "my average",
         ]
 
         # Personal timing/frequency questions
         personal_pattern_phrases = [
-            "when do i", "what time do i", "do i typically", "do i usually",
-            "how often do i", "how many times do i", "am i", "have i been",
-            "why do i", "where do i", "do i experience", "do i get",
+            "when do i",
+            "what time do i",
+            "do i typically",
+            "do i usually",
+            "how often do i",
+            "how many times do i",
+            "am i",
+            "have i been",
+            "why do i",
+            "where do i",
+            "do i experience",
+            "do i get",
         ]
+
+        # Action/strategy requests that imply guidance on what to do next
+        action_strategy_phrases = [
+            "what can i do",
+            "how do i",
+            "what should i",
+            "how can i",
+            "strategies for",
+            "ways to",
+            "what strategies",
+            "strategies work for",
+        ]
+
+        # Expand personal data indicators to include common phrasing
+        personal_data_phrases.extend(
+            [
+                "my spikes",
+                "my post-meal spikes",
+                "my dawn phenomenon",
+            ]
+        )
 
         # Check for personal data indicators
         is_personal = any(phrase in q_lower for phrase in personal_data_phrases)
-        is_pattern_question = any(phrase in q_lower for phrase in personal_pattern_phrases)
+        is_pattern_question = any(
+            phrase in q_lower for phrase in personal_pattern_phrases
+        )
+        is_action_request = any(phrase in q_lower for phrase in action_strategy_phrases)
+
+        # If it's personal data AND asks for action/strategies, treat as HYBRID
+        if is_personal and is_action_request:
+            return Classification(
+                category=QueryCategory.HYBRID,
+                confidence=0.85,
+                reasoning="Query requests actionable strategies based on personal data",
+                secondary_categories=[
+                    QueryCategory.GLOOKO_DATA,
+                    QueryCategory.KNOWLEDGE_BASE,
+                ],
+            )
 
         if is_personal or is_pattern_question:
             # Override to glooko_data if not already
@@ -208,6 +333,67 @@ Rules:
                 )
 
         return classification
+
+    def _detect_meal_management_query(self, query: str) -> Optional[Classification]:
+        """
+        Detect if query is about complex meal management (slow-carb, high-fat foods).
+
+        Returns:
+            Classification if meal management query detected, None otherwise
+        """
+        q_lower = query.lower()
+        
+        # Check for matches across all meal keyword categories
+        food_type_matches = sum(1 for kw in self.COMPLEX_MEAL_KEYWORDS["food_types"] if kw in q_lower)
+        delayed_pattern_matches = sum(1 for kw in self.COMPLEX_MEAL_KEYWORDS["delayed_patterns"] if kw in q_lower)
+        management_term_matches = sum(1 for kw in self.COMPLEX_MEAL_KEYWORDS["management_terms"] if kw in q_lower)
+        
+        total_matches = food_type_matches + delayed_pattern_matches + management_term_matches
+        
+        # Additional pattern checks for "high" mentions related to meals
+        has_meal_high_mention = (("high" in q_lower and ("food" in q_lower or "eat" in q_lower or "meal" in q_lower)) or
+                                 ("spike" in q_lower and ("after" in q_lower or "later" in q_lower or "food" in q_lower)))
+        
+        logger.debug(
+            f"[MEAL_DETECTION] Query: '{query[:60]}...' | "
+            f"food_matches={food_type_matches} delayed_matches={delayed_pattern_matches} "
+            f"mgmt_matches={management_term_matches} total={total_matches} "
+            f"meal_high_mention={has_meal_high_mention}"
+        )
+        
+        # Meal management query if:
+        # - Has food type + delayed pattern keywords, OR
+        # - Has food type + management terms, OR
+        # - Has food type + (high mention or spike mention), OR
+        # - Has 3+ meal-related keywords total
+        if (food_type_matches > 0 and delayed_pattern_matches > 0) or \
+           (food_type_matches > 0 and management_term_matches > 0) or \
+           (food_type_matches > 0 and has_meal_high_mention) or \
+           total_matches >= 3:
+            
+            confidence = min(0.95, 0.7 + (total_matches * 0.1))
+            matched_foods = [kw for kw in self.COMPLEX_MEAL_KEYWORDS["food_types"] if kw in q_lower]
+            
+            logger.info(
+                f"[MEAL_DETECTION] ✓ DETECTED - Query classified as meal management | "
+                f"confidence={confidence:.2f} | "
+                f"matched_foods={matched_foods} | "
+                f"routing_to=HYBRID"
+            )
+            
+            return Classification(
+                category=QueryCategory.HYBRID,  # Route as HYBRID for comprehensive search
+                confidence=confidence,
+                reasoning=f"Complex meal management query detected: {', '.join(matched_foods) if matched_foods else 'delayed spike'} + treatment strategy",
+                secondary_categories=[
+                    QueryCategory.USER_SOURCES,  # Device manuals (extended/combo bolus)
+                    QueryCategory.KNOWLEDGE_BASE,  # Mechanism and guidelines
+                    QueryCategory.CLINICAL_GUIDELINES,  # Evidence-based timing
+                ],
+            )
+        
+        logger.debug(f"[MEAL_DETECTION] ✗ NOT a meal management query")
+        return None
 
     def _search_categories(
         self, query: str, categories: list[QueryCategory]
@@ -293,11 +479,10 @@ Rules:
         # For glooko_data queries, return empty string (will be handled by GlookoQueryAgent)
         if classification.category == QueryCategory.GLOOKO_DATA:
             return ""
-        
+
         # Collect all high-confidence results
-        # Use 0.6 threshold to include knowledge base results (openaps_docs, loop_docs, etc.)
-        # which typically have confidence scores of 0.64-0.67
-        CONFIDENCE_THRESHOLD = 0.6
+        # Use 0.35 threshold - scores vary by collection and embedding model
+        CONFIDENCE_THRESHOLD = 0.35
         all_chunks = []
         for source, source_results in results.items():
             for result in source_results:
@@ -307,16 +492,14 @@ Rules:
         if not all_chunks:
             return "No relevant information found in the knowledge base for this query."
 
-        # Use Gemini to synthesize from chunks
+        # Use the configured LLM to synthesize from chunks
         context_parts = []
         for chunk in all_chunks:
             page_info = f", Page {chunk.page_number}" if chunk.page_number else ""
-            context_parts.append(
-                f"Source: {chunk.source}{page_info}\n{chunk.quote}\n"
-            )
-        
+            context_parts.append(f"Source: {chunk.source}{page_info}\n{chunk.quote}\n")
+
         context = "\n".join(context_parts)
-        
+
         prompt = f"""You are a knowledgeable diabetes educator having a conversation. Answer the user's question by synthesizing information from the provided context excerpts.
 
 Context:
@@ -345,27 +528,41 @@ Your synthesized answer:"""
             )
         except Exception as e:
             # Fallback to formatted chunks
-            return "Based on the knowledge base:\n\n" + "\n\n".join([
-                f"{chunk.quote} ({chunk.source}, Page {chunk.page_number})"
-                for chunk in all_chunks
-            ])
+            return "Based on the knowledge base:\n\n" + "\n\n".join(
+                [
+                    f"{chunk.quote} ({chunk.source}, Page {chunk.page_number})"
+                    for chunk in all_chunks
+                ]
+            )
 
-    def process(self, query: str, verbose: bool = False) -> TriageResponse:
+    def process(
+        self,
+        query: str,
+        verbose: bool = False,
+        conversation_history: Optional[list] = None,
+    ) -> TriageResponse:
         """
         Process a user query through classification, search, and synthesis.
 
         Args:
             query: The user's question
             verbose: Show timing information
+            conversation_history: List of previous exchanges for context.
+                Each exchange is a dict with 'query' and 'response' keys.
 
         Returns:
             TriageResponse with classification, results, and synthesized answer
         """
+        if conversation_history is None:
+            conversation_history = []
         start_time = time.time()
-        
+
+        logger.info(f"[TRIAGE] Processing query: {query[:100]}")
+
         # Step 1: Classify the query
         t0 = time.time()
         classification = self.classify(query)
+        logger.info(f"[TRIAGE] Classification: {classification.category.value} (confidence: {classification.confidence:.2f}, reasoning: {classification.reasoning[:100]})")
         if verbose:
             print(f"[Timing] Classification: {time.time() - t0:.2f}s")
 
@@ -376,15 +573,22 @@ Your synthesized answer:"""
         if classification.confidence < self.CONFIDENCE_THRESHOLD:
             categories_to_search.extend(classification.secondary_categories)
 
+        logger.info(f"[TRIAGE] Categories to search: {[c.value for c in categories_to_search]}")
+
         # Step 3: Search relevant knowledge sources
         t0 = time.time()
         results = self._search_categories(query, categories_to_search)
+        total_chunks = sum(len(chunks) for chunks in results.values())
+        logger.info(f"[TRIAGE] Search returned {total_chunks} chunks across {len(results)} sources")
         if verbose:
             print(f"[Timing] Search: {time.time() - t0:.2f}s")
 
         # Step 4: Synthesize answer from results
         t0 = time.time()
         synthesized = self._synthesize_answer(query, classification, results)
+        logger.info(f"[TRIAGE] Synthesized answer length: {len(synthesized)} chars")
+        if len(synthesized) < 200:
+            logger.warning(f"[TRIAGE] VERY SHORT ANSWER: {synthesized}")
         if verbose:
             print(f"[Timing] Synthesis: {time.time() - t0:.2f}s")
             print(f"[Timing] Total: {time.time() - start_time:.2f}s")
@@ -405,12 +609,16 @@ Your synthesized answer:"""
         output.append("=" * 60)
 
         # Classification
-        output.append(f"\nClassification: {response.classification.category.value.upper()}")
+        output.append(
+            f"\nClassification: {response.classification.category.value.upper()}"
+        )
         output.append(f"Confidence: {response.classification.confidence:.0%}")
         output.append(f"Reasoning: {response.classification.reasoning}")
 
         if response.classification.secondary_categories:
-            secondary = ", ".join(c.value for c in response.classification.secondary_categories)
+            secondary = ", ".join(
+                c.value for c in response.classification.secondary_categories
+            )
             output.append(f"Secondary: {secondary}")
 
         # Search Results

@@ -1,17 +1,17 @@
-# LLM Provider - LiteLLM with multi-provider support
-litellm>=1.58.0
+# LLM Provider - LiteLLM with Groq-only support
+litellm==1.57.5
 tenacity>=8.2.0  # Retry logic for LLM API calls
 mcp
 python-dotenv
 PyPDF2
 pycryptodome  # For encrypted PDFs
 langchain
-langchain-google-genai
 chromadb
 pydantic-settings
 fastapi
 uvicorn[standard]
 tiktoken  # For token-based text chunking
+sentence-transformers  # Local embeddings for Groq-only workflows
 
 # Web scraping and automation
 beautifulsoup4>=4.12.0

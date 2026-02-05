@@ -58,7 +58,14 @@
       "Bash(sudo -n btrfs property:*)",
       "Bash(python scripts/ingest_openaps_batch1.py:*)",
       "WebFetch(domain:eutils.ncbi.nlm.nih.gov)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(grep:*)",
+      "Bash(unzip:*)",
+      "Bash(timeout 300 pytest:*)",
+      "Bash(timeout 600 pytest:*)",
+      "Bash(timeout 60 pytest:*)",
+      "Bash(timeout 120 pytest:*)",
+      "Bash(PYTHONPATH=/home/gary/diabetes-buddy timeout 120 pytest:*)"
     ]
   }
 }

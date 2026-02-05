@@ -1,14 +1,14 @@
-litellm>=1.50.0
+litellm==1.57.5
 mcp
 python-dotenv
 PyPDF2
 pycryptodome
 langchain
-langchain-google-genai
 chromadb
 pydantic-settings
 fastapi
 uvicorn[standard]
+sentence-transformers
 
 # Web scraping and automation
 beautifulsoup4>=4.12.0

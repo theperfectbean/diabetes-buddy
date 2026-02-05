@@ -12,6 +12,7 @@ import json
 import logging
 import sys
 import zipfile
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from io import StringIO
@@ -833,6 +834,184 @@ class DataAnalyzer:
             "evidence": evidence,
         }
 
+    def analyze_highs_by_hour(
+        self,
+        readings: list[CGMReading],
+        threshold_mg_dl: float = 180.0
+    ) -> dict:
+        """
+        Analyze when high glucose readings occur throughout the day.
+
+        This answers questions like "at what time do I typically experience highs?"
+        by computing the percentage of high readings for each hour of the day.
+
+        Args:
+            readings: List of CGM readings
+            threshold_mg_dl: Glucose threshold for "high" in mg/dL (default 180)
+
+        Returns:
+            Dictionary with hourly breakdown and peak times
+        """
+        if not readings:
+            return {
+                "hourly_percentages": {},
+                "peak_hours": [],
+                "peak_time_description": "No data available",
+                "total_readings": 0,
+                "high_readings": 0,
+                "evidence": ["No CGM data available for hourly analysis"]
+            }
+
+        hour_highs = Counter()
+        hour_totals = Counter()
+
+        for reading in readings:
+            hour = reading.timestamp.hour
+            hour_totals[hour] += 1
+            if reading.glucose_mg_dl >= threshold_mg_dl:
+                hour_highs[hour] += 1
+
+        # Calculate percentage per hour
+        hourly_pct = {
+            hour: round((hour_highs[hour] / hour_totals[hour] * 100), 1) if hour_totals[hour] > 0 else 0
+            for hour in range(24)
+        }
+
+        # Find peak hours (>40% high readings)
+        peak_hours = sorted(
+            [h for h, pct in hourly_pct.items() if pct > 40],
+            key=lambda h: -hourly_pct[h]
+        )
+
+        def format_hour(h: int) -> str:
+            """Format hour as 12-hour time with AM/PM."""
+            ampm = "AM" if h < 12 else "PM"
+            h12 = h if h <= 12 else h - 12
+            if h12 == 0:
+                h12 = 12
+            return f"{h12}{ampm}"
+
+        # Create description of peak times
+        if peak_hours:
+            peak_descriptions = [f"{format_hour(h)} ({hourly_pct[h]:.0f}%)" for h in peak_hours[:5]]
+            peak_time_description = ", ".join(peak_descriptions)
+        else:
+            # No hours with >40% highs, find the highest ones anyway
+            top_hours = sorted(hourly_pct.keys(), key=lambda h: -hourly_pct[h])[:3]
+            if any(hourly_pct[h] > 0 for h in top_hours):
+                peak_descriptions = [f"{format_hour(h)} ({hourly_pct[h]:.0f}%)" for h in top_hours if hourly_pct[h] > 0]
+                peak_time_description = ", ".join(peak_descriptions) if peak_descriptions else "No significant peaks"
+            else:
+                peak_time_description = "No high readings detected"
+
+        # Build evidence
+        evidence = []
+        total_readings = sum(hour_totals.values())
+        high_readings = sum(hour_highs.values())
+
+        if peak_hours:
+            evidence.append(f"Peak high hours: {', '.join([format_hour(h) for h in peak_hours[:3]])}")
+            evidence.append(f"Highest: {format_hour(peak_hours[0])} with {hourly_pct[peak_hours[0]]:.0f}% of readings above {threshold_mg_dl:.0f} mg/dL")
+        else:
+            evidence.append(f"No hours with >40% high readings (threshold: {threshold_mg_dl:.0f} mg/dL)")
+
+        evidence.append(f"Total readings analyzed: {total_readings:,}")
+        evidence.append(f"High readings: {high_readings:,} ({high_readings/total_readings*100:.1f}% overall)")
+
+        return {
+            "hourly_percentages": hourly_pct,
+            "peak_hours": peak_hours[:5],
+            "peak_time_description": peak_time_description,
+            "total_readings": total_readings,
+            "high_readings": high_readings,
+            "evidence": evidence,
+            "threshold_mg_dl": threshold_mg_dl,
+        }
+
+    def analyze_lows_by_hour(
+        self,
+        readings: list[CGMReading],
+        threshold_mg_dl: float = 70.0
+    ) -> dict:
+        """
+        Analyze when low glucose readings occur throughout the day.
+
+        This answers questions like "at what time do I typically experience lows?"
+        by computing the percentage of low readings for each hour of the day.
+
+        Args:
+            readings: List of CGM readings
+            threshold_mg_dl: Glucose threshold for "low" in mg/dL (default 70)
+
+        Returns:
+            Dictionary with hourly breakdown and peak times for lows
+        """
+        if not readings:
+            return {
+                "hourly_percentages": {},
+                "peak_hours": [],
+                "peak_time_description": "No data available",
+                "total_readings": 0,
+                "low_readings": 0,
+                "evidence": ["No CGM data available for hourly analysis"]
+            }
+
+        hour_lows = Counter()
+        hour_totals = Counter()
+
+        for reading in readings:
+            hour = reading.timestamp.hour
+            hour_totals[hour] += 1
+            if reading.glucose_mg_dl < threshold_mg_dl:
+                hour_lows[hour] += 1
+
+        # Calculate percentage per hour
+        hourly_pct = {
+            hour: round((hour_lows[hour] / hour_totals[hour] * 100), 1) if hour_totals[hour] > 0 else 0
+            for hour in range(24)
+        }
+
+        # Find peak hours for lows (>5% low readings - lows are less common)
+        peak_hours = sorted(
+            [h for h, pct in hourly_pct.items() if pct > 5],
+            key=lambda h: -hourly_pct[h]
+        )
+
+        def format_hour(h: int) -> str:
+            ampm = "AM" if h < 12 else "PM"
+            h12 = h if h <= 12 else h - 12
+            if h12 == 0:
+                h12 = 12
+            return f"{h12}{ampm}"
+
+        if peak_hours:
+            peak_descriptions = [f"{format_hour(h)} ({hourly_pct[h]:.0f}%)" for h in peak_hours[:5]]
+            peak_time_description = ", ".join(peak_descriptions)
+        else:
+            peak_time_description = "No significant low patterns by hour"
+
+        evidence = []
+        total_readings = sum(hour_totals.values())
+        low_readings = sum(hour_lows.values())
+
+        if peak_hours:
+            evidence.append(f"Peak low hours: {', '.join([format_hour(h) for h in peak_hours[:3]])}")
+        else:
+            evidence.append("No hours with significant low readings (>5%)")
+
+        evidence.append(f"Total readings analyzed: {total_readings:,}")
+        evidence.append(f"Low readings: {low_readings:,} ({low_readings/total_readings*100:.1f}% overall)")
+
+        return {
+            "hourly_percentages": hourly_pct,
+            "peak_hours": peak_hours[:5],
+            "peak_time_description": peak_time_description,
+            "total_readings": total_readings,
+            "low_readings": low_readings,
+            "evidence": evidence,
+            "threshold_mg_dl": threshold_mg_dl,
+        }
+
     def analyze_insulin_sensitivity(
         self,
         readings: list[CGMReading],
@@ -1237,6 +1416,12 @@ class GlookoAnalyzer:
             parsed.exercise_records
         )
 
+        logger.info("Analyzing highs by hour...")
+        highs_by_hour = self.analyzer.analyze_highs_by_hour(parsed.cgm_readings)
+
+        logger.info("Analyzing lows by hour...")
+        lows_by_hour = self.analyzer.analyze_lows_by_hour(parsed.cgm_readings)
+
         # Generate recommendations (never specific doses)
         recommendations = self._generate_recommendations(
             tir, dawn, post_meal, sensitivity, exercise
@@ -1250,6 +1435,8 @@ class GlookoAnalyzer:
                 "post_meal_spikes": post_meal,
                 "insulin_sensitivity": sensitivity,
                 "exercise_impact": exercise,
+                "highs_by_hour": highs_by_hour,
+                "lows_by_hour": lows_by_hour,
             },
             "recommendations": recommendations,
             "analysis_period": {

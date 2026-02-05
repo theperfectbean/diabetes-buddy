@@ -1,0 +1,80 @@
+rag_quality:
+  min_chunks: 3
+  min_confidence: 0.7
+  min_sources: 2  # for corroboration
+  min_chunk_confidence: 0.42  # filter threshold before assessment (increased for better relevancy)
+
+parametric_usage:
+  max_ratio: 0.7  # warn if >70% parametric
+  confidence_score: 0.6  # fixed for LLM knowledge
+
+safety:
+  enhanced_check_threshold: 0.3  # trigger if parametric >30%
+
+emergency_detection:
+  enabled: true
+  severity_thresholds:
+    critical: 0.9
+    high: 0.7
+    medium: 0.5
+  response_templates:
+    critical: "⚠️ MEDICAL EMERGENCY detected. This may be a medical emergency. Call emergency services if symptoms worsen."
+    high: "⚠️ URGENT MEDICAL ATTENTION needed. Please seek immediate medical attention for severe symptoms."
+    medium: "⚠️ MEDICAL ATTENTION recommended. Consult your healthcare provider about these symptoms."
+
+logging:
+  level: "INFO"
+  file_path: "logs/hybrid_system.log"
+  max_size_mb: 10
+  backup_count: 5
+
+knowledge_monitoring:
+  staleness_threshold_days: 30
+  critical_threshold_days: 90
+
+experimentation:
+  enabled: false
+  experiments:
+    - name: "hybrid_vs_pure_rag"
+      cohorts:
+        control: 50
+        treatment: 50
+      metrics: [feedback_score, response_time, parametric_ratio, sources_used]
+      duration_days: 30
+      min_sample_size: 620
+      significance_threshold: 0.05
+
+personalization:
+  enabled: true
+  device_priority_boost: 0.2
+  max_boost: 0.3
+  learning_rate: 0.1
+  decay_factor: 0.1
+  feedback_window_days: 30
+  auto_device_detection: true
+
+quality_evaluation:
+  enabled: true
+  async: true  # Non-blocking evaluation
+  log_path: data/quality_scores.csv
+  cache_enabled: true
+  max_cache_size: 1000
+  dimensions:
+    - answer_relevancy
+    - practical_helpfulness
+    - knowledge_guidance
+    - tone_professionalism
+    - clarity_structure
+    - source_integration
+    - safety_appropriateness
+  thresholds:
+    min_acceptable_score: 3.0  # out of 5
+    alert_on_score_below: 2.5
+
+hallucination_detection:
+  enabled: true
+  rule_based_enabled: true
+  llm_verification_enabled: false  # LLM fallback for ambiguous cases (Phase 2.2)
+  log_path: data/hallucination_detections.csv
+  confidence_threshold: 0.7  # Min confidence to log
+  alert_threshold: 0.8  # Min confidence to trigger warning

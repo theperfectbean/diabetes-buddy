@@ -1,6 +1,22 @@
 // Diabetes Buddy Web Interface - JavaScript
 
 class DiabetesBuddyChat {
+    // Source display name mapping - fixes 'undefined' in KB status
+    SOURCE_DISPLAY_NAMES = {
+        'ada_standards': 'ADA Standards of Care',
+        'australian_guidelines': 'Australian Diabetes Guidelines',
+        'openaps_docs': 'OpenAPS Documentation',
+        'loop_docs': 'Loop Documentation',
+        'androidaps_docs': 'AndroidAPS Documentation',
+        'wikipedia_education': 'Wikipedia T1D Education',
+        'research_papers': 'PubMed Research Papers',
+        'camaps_docs': 'CamAPS Documentation',
+        'user_sources': 'Your Uploaded Documents',
+        'user_manuals': 'Your Uploaded Documents',
+        'glooko': 'Glooko Data',
+        'general': 'General Medical Knowledge'
+    };
+
     constructor() {
         console.log('DiabetesBuddyChat constructor called');
         
@@ -13,6 +29,10 @@ class DiabetesBuddyChat {
         this.newChatBtn = document.getElementById('newChatBtn');
         this.exportBtn = document.getElementById('exportBtn');
         this.themeToggle = document.getElementById('themeToggle');
+
+        // Conversation sidebar elements
+        this.conversationList = document.getElementById('conversationList');
+        this.newConversationBtn = document.getElementById('newConversationBtn');
 
         // Settings modal elements
         this.settingsBtn = document.getElementById('settingsBtn');
@@ -40,83 +60,365 @@ class DiabetesBuddyChat {
 
         // Configure marked.js for markdown
         if (window.marked) {
-            marked.use({ breaks: true, gfm: true, mangle: false, headerIds: false });
+            marked.setOptions({
+                breaks: true,
+                gfm: true,
+                mangle: false,
+                headerIds: false,
+                pedantic: false
+            });
+            console.log('✓ Marked.js configured for markdown parsing');
+        } else {
+            console.warn('⚠️  Marked.js not available - markdown will use fallback HTML conversion');
+        }
+        
+        // Configure DOMPurify for XSS prevention
+        if (window.DOMPurify) {
+            console.log('✓ DOMPurify loaded for HTML sanitization');
         }
 
-        // Initialize conversation
-        this.conversationId = this.loadOrCreateConversation();
+        // Initialize conversation - always start with empty chat
+        this.conversationId = null;
         this.messages = [];
+        this.conversations = []; // List of all conversations
 
-        // Analysis state
+        this.sessionId = this.getOrCreateSessionId();
+
         this.currentAnalysis = null;
         this.tirChart = null;
 
         this.setupEventListeners();
         this.setupDataAnalysisListeners();
+        this.setupDeviceConfirmation();
+        this.setupGlucoseUnitSettings();
         this.loadTheme();
+        this.loadGlucoseUnit();
         this.loadConversationHistory();
         this.loadSources();
-        
+
+        // Show welcome box on initial page load
+        this.showWelcomeState();
+
         console.log('DiabetesBuddyChat initialization complete');
+    }
+
+    getOrCreateSessionId() {
+        const storageKey = 'diabuddy_session_id';
+        let sessionId = localStorage.getItem(storageKey);
+        if (!sessionId) {
+            if (window.crypto?.randomUUID) {
+                sessionId = window.crypto.randomUUID();
+            } else {
+                sessionId = `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            }
+            localStorage.setItem(storageKey, sessionId);
+        }
+        return sessionId;
+    }
+
+    /**
+     * Get display name for a source, with fallback handling
+     * @param {Object} source - Source object from API
+     * @returns {string} Display name for the source
+     */
+    getSourceDisplayName(source) {
+        if (!source) return 'Unknown Source';
+
+        const sourceId = source.id || source.key || source.collection_key || source.collection_name || source.source_id || '';
+        const sourceName = source.display_name || source.name || source.collection_name || sourceId || '';
+        const filename = source.filename || '';
+
+        if (sourceId && this.SOURCE_DISPLAY_NAMES[sourceId]) {
+            return this.SOURCE_DISPLAY_NAMES[sourceId];
+        }
+        if (sourceName && this.SOURCE_DISPLAY_NAMES[sourceName.toLowerCase()]) {
+            return this.SOURCE_DISPLAY_NAMES[sourceName.toLowerCase()];
+        }
+        if (filename) {
+            const withoutExt = filename.replace(/\.[^/.]+$/, '');
+            const pretty = withoutExt.replace(/[_-]+/g, ' ').trim();
+            if (pretty) {
+                return pretty.replace(/\b\w/g, (c) => c.toUpperCase());
+            }
+            return filename;
+        }
+
+        return sourceName || sourceId || 'Unknown Source';
+    }
+
+    /**
+     * Update knowledge breakdown display with RAG/Parametric percentages
+     * @param {Object} breakdown - Knowledge breakdown object from response
+     */
+    async updateKnowledgeBreakdownDisplay(breakdown) {
+        const kbStatus = document.getElementById('kbStatus');
+        if (!kbStatus || !breakdown) return;
+
+        let breakdownDiv = kbStatus.querySelector('.kb-breakdown');
+        if (!breakdownDiv) {
+            breakdownDiv = document.createElement('div');
+            breakdownDiv.className = 'kb-breakdown';
+            kbStatus.appendChild(breakdownDiv);
+        }
+
+        const ragPercent = Math.round(breakdown.rag_ratio * 100);
+        const paraPercent = Math.round(breakdown.parametric_ratio * 100);
+
+        breakdownDiv.innerHTML = `
+            <div class="breakdown-stats">
+                <div class="breakdown-item">
+                    <span class="stat-label">RAG</span>
+                    <span class="stat-value">${ragPercent}%</span>
+                </div>
+                <div class="breakdown-item">
+                    <span class="stat-label">Parametric</span>
+                    <span class="stat-value">${paraPercent}%</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // ============================================
+    // Welcome Box / Chat State Management
+    // ============================================
+
+    /**
+     * Show the welcome state with sample questions.
+     * Called on initial page load and when starting a new chat.
+     */
+    showWelcomeState() {
+        this.chatMessages.innerHTML = '';
+        this.addWelcomeMessage();
+    }
+
+    /**
+     * Hide welcome and show chat interface.
+     * Called when first message is sent or conversation is loaded.
+     */
+    showChatState() {
+        // Remove any welcome message if present
+        const welcomeMsg = this.chatMessages.querySelector('.message.welcome');
+        if (welcomeMsg) {
+            welcomeMsg.remove();
+        }
     }
 
     // ============================================
     // Conversation & History Management
     // ============================================
 
-    loadOrCreateConversation() {
-        let id = localStorage.getItem('diabuddy_conversation_id');
-        if (!id) {
-            id = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            localStorage.setItem('diabuddy_conversation_id', id);
+    async loadConversationHistory() {
+        try {
+            const response = await fetch('/api/conversations');
+            if (response.ok) {
+                this.conversations = await response.json();
+                this.renderConversationList();
+            } else {
+                console.error('Failed to load conversations');
+                this.conversations = [];
+            }
+        } catch (error) {
+            console.error('Error loading conversation history:', error);
+            this.conversations = [];
         }
-        return id;
     }
 
-    loadConversationHistory() {
-        const history = localStorage.getItem(`diabuddy_history_${this.conversationId}`);
-        if (history) {
-            try {
-                this.messages = JSON.parse(history);
-                this.messages.forEach(msg => this.renderSavedMessage(msg));
-            } catch (e) {
-                console.error('Failed to load history:', e);
-                this.messages = [];
+    async createNewConversation() {
+        try {
+            const response = await fetch('/api/conversations', { method: 'POST' });
+            if (response.ok) {
+                const data = await response.json();
+                this.conversationId = data.conversationId;
+                return this.conversationId;
             }
+        } catch (error) {
+            console.error('Error creating new conversation:', error);
+        }
+        return null;
+    }
+
+    async loadConversation(conversationId) {
+        try {
+            console.log('Loading conversation:', conversationId);
+            const response = await fetch(`/api/conversations/${conversationId}`);
+            if (response.ok) {
+                const conversation = await response.json();
+                console.log('Conversation loaded:', conversation);
+                this.conversationId = conversationId;
+                this.messages = conversation.messages || [];
+                console.log(`Loaded ${this.messages.length} messages`);
+
+                // Clear current chat (including any welcome message) and render messages
+                this.chatMessages.innerHTML = '';
+
+                // Only render messages if there are any
+                if (this.messages.length > 0) {
+                    console.log('Rendering saved messages');
+                    this.messages.forEach((msg, idx) => {
+                        console.log(`  Rendering message ${idx+1}: type=${msg.type}, contentLength=${msg.content?.length || 0}, hasData=${!!msg.data}`);
+                        this.renderSavedMessage(msg);
+                    });
+                } else {
+                    // Empty conversation - show welcome
+                    console.log('No messages in conversation, showing welcome');
+                    this.addWelcomeMessage();
+                }
+
+                // Update active conversation in sidebar
+                this.updateActiveConversation(conversationId);
+                console.log('Conversation loaded successfully');
+
+                return true;
+            } else {
+                console.error('Failed to load conversation, status:', response.status);
+            }
+        } catch (error) {
+            console.error('Error loading conversation:', error);
+        }
+        return false;
+    }
+
+    async deleteConversation(conversationId) {
+        try {
+            const response = await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' });
+            if (response.ok) {
+                // Remove from conversations list
+                this.conversations = this.conversations.filter(conv => conv.id !== conversationId);
+                this.renderConversationList();
+                
+                // If this was the current conversation, start a new one
+                if (this.conversationId === conversationId) {
+                    await this.startFreshConversation();
+                }
+            }
+        } catch (error) {
+            console.error('Error deleting conversation:', error);
+        }
+    }
+
+    async startFreshConversation() {
+        // Don't create backend conversation yet - just reset UI state
+        // Conversation will be created when first message is sent
+        this.conversationId = null;
+        this.messages = [];
+
+        // Clear chat and add welcome message
+        this.chatMessages.innerHTML = '';
+        this.addWelcomeMessage();
+
+        // Clear active state in sidebar
+        const items = this.conversationList?.querySelectorAll('.conversation-item');
+        items?.forEach(item => item.classList.remove('active'));
+    }
+
+    renderConversationList() {
+        if (!this.conversationList) return;
+        
+        const sidebar = document.querySelector('.conversation-sidebar');
+        
+        // Always show the sidebar
+        if (sidebar) sidebar.style.display = 'block';
+        
+        this.conversationList.innerHTML = '';
+        
+        if (this.conversations.length === 0) {
+            // Show empty state message
+            const emptyMsg = document.createElement('div');
+            emptyMsg.className = 'conversation-item empty-state';
+            emptyMsg.textContent = 'No conversations yet';
+            this.conversationList.appendChild(emptyMsg);
+            return;
         }
 
-        // Show welcome if no history
-        if (this.messages.length === 0) {
-            this.addWelcomeMessage();
-        }
+        this.conversations.forEach(conv => {
+            const item = document.createElement('div');
+            item.className = `conversation-item${this.conversationId === conv.id ? ' active' : ''}`;
+            item.setAttribute('data-conversation-id', conv.id);
+            
+            const timestamp = new Date(conv.timestamp).toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+            
+            item.innerHTML = `
+                <div class="conversation-timestamp">${timestamp}</div>
+                <div class="conversation-preview">${conv.firstQuery}</div>
+                <div class="conversation-meta">
+                    <span>${conv.messageCount} messages</span>
+                    <button class="conversation-delete" aria-label="Delete conversation" title="Delete conversation">🗑️</button>
+                </div>
+            `;
+            
+            // Click to load conversation
+            item.addEventListener('click', (e) => {
+                if (!e.target.classList.contains('conversation-delete')) {
+                    this.loadConversation(conv.id);
+                }
+            });
+            
+            // Delete button
+            const deleteBtn = item.querySelector('.conversation-delete');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm('Are you sure you want to delete this conversation?')) {
+                    this.deleteConversation(conv.id);
+                }
+            });
+            
+            this.conversationList.appendChild(item);
+        });
+    }
+
+    updateActiveConversation(conversationId) {
+        // Update active class in sidebar
+        const items = this.conversationList.querySelectorAll('.conversation-item');
+        items.forEach(item => {
+            if (item.getAttribute('data-conversation-id') === conversationId) {
+                item.classList.add('active');
+            } else {
+                item.classList.remove('active');
+            }
+        });
     }
 
     saveMessage(message) {
+        // Save to local messages array (no localStorage anymore)
         this.messages.push(message);
-        // Limit to last 50 messages
-        if (this.messages.length > 50) {
-            this.messages = this.messages.slice(-50);
+        
+        // Auto-save to backend (async, don't wait)
+        if (this.conversationId) {
+            this.saveMessageToBackend(message);
         }
-        localStorage.setItem(
-            `diabuddy_history_${this.conversationId}`,
-            JSON.stringify(this.messages)
-        );
     }
 
-    clearConversation() {
-        localStorage.removeItem(`diabuddy_history_${this.conversationId}`);
-        this.conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        localStorage.setItem('diabuddy_conversation_id', this.conversationId);
-        this.messages = [];
-        this.chatMessages.innerHTML = '';
-        this.addWelcomeMessage();
+    async saveMessageToBackend(message) {
+        // This is already handled in the query endpoints
+        // Messages are saved when queries are made
     }
 
     renderSavedMessage(msg) {
+        console.log('renderSavedMessage called with:', msg.type, msg.content?.substring(0, 50));
         if (msg.type === 'user') {
-            this.addMessage(msg.content, 'user', false);
+            console.log('  Rendering as user message');
+            this.addMessage(msg.content, 'user', false, msg.timestamp);
         } else if (msg.type === 'assistant') {
-            this.addAssistantMessage(msg.data, false);
+            console.log('  Rendering as assistant message');
+            // Ensure we have a proper data object with answer field
+            const data = msg.data || {};
+            console.log('    Initial data keys:', Object.keys(data));
+            if (!data.answer && msg.content) {
+                console.log('    Setting answer from content');
+                data.answer = msg.content;
+            }
+            data.sources = data.sources || [];
+            console.log('    Final data keys:', Object.keys(data));
+            console.log('    data.answer length:', data.answer?.length || 0);
+            this.addAssistantMessage(data, false, msg.timestamp);
+        } else {
+            console.log('  Unknown message type:', msg.type);
         }
     }
 
@@ -151,6 +453,74 @@ class DiabetesBuddyChat {
     }
 
     // ============================================
+    // Glucose Unit Settings
+    // ============================================
+
+    loadGlucoseUnit() {
+        // Load glucose unit from localStorage, with fallback to API
+        const saved = localStorage.getItem('diabuddy_glucose_unit');
+        if (saved) {
+            this.setGlucoseUnitUI(saved);
+        } else {
+            // Try to load from server
+            this.loadGlucoseUnitFromServer();
+        }
+    }
+
+    async loadGlucoseUnitFromServer() {
+        try {
+            const response = await fetch('/api/settings/glucose-unit');
+            if (response.ok) {
+                const data = await response.json();
+                const unit = data.glucose_unit || 'mmol/L';
+                localStorage.setItem('diabuddy_glucose_unit', unit);
+                this.setGlucoseUnitUI(unit);
+            }
+        } catch (error) {
+            console.warn('Failed to load glucose unit from server:', error);
+            // Default to mmol/L
+            this.setGlucoseUnitUI('mmol/L');
+        }
+    }
+
+    setGlucoseUnitUI(unit) {
+        if (unit === 'mmol/L') {
+            document.getElementById('glucoseUnitMmol').checked = true;
+        } else {
+            document.getElementById('glucoseUnitMgdl').checked = true;
+        }
+    }
+
+    setupGlucoseUnitSettings() {
+        const glucoseUnitRadios = document.querySelectorAll('input[name="glucoseUnit"]');
+        
+        glucoseUnitRadios.forEach(radio => {
+            radio.addEventListener('change', async (e) => {
+                const unit = e.target.value;
+                localStorage.setItem('diabuddy_glucose_unit', unit);
+                
+                try {
+                    const response = await fetch('/api/settings/glucose-unit', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ glucose_unit: unit })
+                    });
+                    
+                    if (!response.ok) {
+                        console.error('Failed to save glucose unit:', response.statusText);
+                        alert('Failed to save glucose unit preference');
+                    }
+                } catch (error) {
+                    console.error('Error saving glucose unit:', error);
+                    alert('Error saving glucose unit preference');
+                }
+            });
+        });
+    }
+
+    // ============================================
     // Event Listeners
     // ============================================
 
@@ -163,12 +533,17 @@ class DiabetesBuddyChat {
             }
         });
 
-        // New chat button
+        // New chat button (header)
         if (this.newChatBtn) {
             this.newChatBtn.addEventListener('click', () => {
-                if (confirm('Start a new conversation? Current chat will be cleared.')) {
-                    this.clearConversation();
-                }
+                this.startFreshConversation();
+            });
+        }
+
+        // New conversation button (sidebar)
+        if (this.newConversationBtn) {
+            this.newConversationBtn.addEventListener('click', () => {
+                this.startFreshConversation();
             });
         }
 
@@ -276,21 +651,56 @@ class DiabetesBuddyChat {
     // Query Handling
     // ============================================
 
+    isGlookoDataQuery(query) {
+        const q = query.toLowerCase();
+        const keywords = [
+            'my glucose', 'blood sugar', 'time in range', 'tir', 'tbr', 'tar',
+            'glooko', 'cgm', 'readings', 'lows', 'low blood sugar', 'hypo',
+            'hypoglycemia', 'highs', 'high blood sugar', 'hyper',
+            'hyperglycemia', 'dawn', 'postmeal', 'post-meal', 'post meal',
+            'spike', 'pattern', 'nocturnal', 'overnight'
+        ];
+        return keywords.some(keyword => q.includes(keyword));
+    }
+
     async sendQuery() {
+        console.log('sendQuery called');
         const query = this.queryInput.value.trim();
+        console.log('Query:', query);
 
         // Validation
         if (!query) {
+            console.log('Query is empty, showing error');
             this.showInputError('Please enter a question');
             return;
         }
         if (query.length < 3) {
+            console.log('Query too short, showing error');
             this.showInputError('Please ask a complete question');
             return;
         }
         if (query.length > 2000) {
+            console.log('Query too long, showing error');
             this.showInputError('Question is too long (max 2000 characters)');
             return;
+        }
+
+        console.log('Query validation passed, proceeding...');
+
+        // Track if this is the first message in a new conversation
+        const isNewConversation = !this.conversationId;
+
+        // If no conversation exists, create one
+        if (!this.conversationId) {
+            console.log('No conversation exists, creating new one');
+            this.conversationId = await this.createNewConversation();
+            if (!this.conversationId) {
+                console.error('Failed to create conversation');
+                this.showInputError('Failed to start conversation. Please try again.');
+                return;
+            }
+            // Clear any welcome message and prepare for chat
+            this.chatMessages.innerHTML = '';
         }
 
         // Clear input and disable button
@@ -298,25 +708,324 @@ class DiabetesBuddyChat {
         this.sendBtn.disabled = true;
 
         // Add user message
+        console.log('Adding user message');
         this.addMessage(query, 'user');
-        this.saveMessage({ type: 'user', content: query, timestamp: Date.now() });
+        this.saveMessage({ 
+            type: 'user', 
+            content: query, 
+            timestamp: new Date().toISOString() 
+        });
 
-        // Add loading indicator
-        const loadingId = this.addLoadingIndicator();
-
+        // Add assistant message placeholder with "Thinking..."
+        console.log('Adding thinking message');
+        const thinkingMessageDiv = this.addThinkingMessage();
+        
         try {
-            const data = await this.sendQueryWithRetry(query);
-            this.removeMessage(loadingId);
-            this.addAssistantMessage(data);
-            this.saveMessage({ type: 'assistant', data: data, timestamp: Date.now() });
+            // All queries now use streaming for consistent progressive rendering
+            // This ensures both Groq and Glooko data queries have smooth, character-by-character display
+            console.log('Starting streaming query for all query types');
+            const data = await this.sendStreamingQuery(query, thinkingMessageDiv);
+            console.log('Streaming completed with data:', data);
+
+            // Save the complete assistant message
+            this.saveMessage({
+                type: 'assistant',
+                data: data,
+                timestamp: new Date().toISOString()
+            });
+
+            // Refresh sidebar if this was a new conversation
+            if (isNewConversation) {
+                await this.loadConversationHistory();
+                this.updateActiveConversation(this.conversationId);
+            }
 
         } catch (error) {
-            this.removeMessage(loadingId);
+            console.error('Error in sendQuery:', error);
             this.addMessage(`Error: ${error.message}`, 'system');
         } finally {
             this.sendBtn.disabled = false;
             this.queryInput.focus();
         }
+    }
+
+    async sendStreamingQuery(query, messageDiv) {
+        return new Promise((resolve, reject) => {
+            let fullResponse = '';
+            let displayedResponse = '';
+            let isFirstChunk = true;
+            let autoScrollEnabled = true;
+            let isStreamComplete = false;
+            const startTime = Date.now();
+            
+            // Progressive rendering: display accumulated chunks smoothly
+            const renderInterval = setInterval(() => {
+                if (displayedResponse.length < fullResponse.length) {
+                    // Add next chunk of characters (simulate typewriter effect)
+                    const chunkSize = Math.min(5, fullResponse.length - displayedResponse.length);
+                    displayedResponse = fullResponse.substring(0, displayedResponse.length + chunkSize);
+                    
+                    const contentDiv = messageDiv.querySelector('.answer');
+                    if (contentDiv) {
+                        // Render markdown in streaming content
+                        const formatted = this.renderMarkdown(fullResponse);
+                        contentDiv.innerHTML = formatted;
+                        displayedResponse = fullResponse;
+                        
+                        if (autoScrollEnabled) {
+                            this.scrollToBottom();
+                        }
+                    }
+                } else if (isStreamComplete) {
+                    // Stream is done and everything is displayed
+                    clearInterval(renderInterval);
+                }
+            }, 30); // Update every 30ms for smooth animation
+
+            console.log('Creating EventSource for query:', query);
+            
+            // Create EventSource for streaming (include conversation_id if available)
+            let eventSourceUrl = `${window.location.origin}/api/query/stream?query=${encodeURIComponent(query)}`;
+            if (this.conversationId) {
+                eventSourceUrl += `&conversation_id=${encodeURIComponent(this.conversationId)}`;
+            }
+            console.log('EventSource URL:', eventSourceUrl);
+            const eventSource = new EventSource(eventSourceUrl);
+
+            // Handle connection open
+            eventSource.onopen = (event) => {
+                console.log('EventSource connection opened:', event);
+            };
+
+            // Handle incoming chunks
+            eventSource.onmessage = (event) => {
+                const elapsed = (Date.now() - startTime) / 1000;
+                const chunk = event.data;
+                console.log(`[FRONTEND] Chunk received at ${elapsed.toFixed(3)}s: ${chunk.substring(0, 50)}`);
+
+                // Accumulate chunks (rendering happens in interval above)
+                fullResponse += chunk;
+
+                if (isFirstChunk) {
+                    console.log('First chunk received, replacing content with proper structure');
+                    // Clear thinking animation
+                    if (messageDiv._thinkingAnimation) {
+                        clearInterval(messageDiv._thinkingAnimation);
+                        delete messageDiv._thinkingAnimation;
+                    }
+                    // Create message structure
+                    messageDiv.innerHTML = `
+                        <div class="message-header">
+                            <span class="message-role">Diabetes Buddy</span>
+                            <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+                        </div>
+                        <div class="answer"></div>
+                    `;
+                    isFirstChunk = false;
+                }
+            };
+
+            // Handle errors
+            eventSource.onerror = (error) => {
+                console.error('EventSource error:', error);
+                console.error('EventSource readyState:', eventSource.readyState);
+                clearInterval(renderInterval);
+                // Clear thinking animation
+                if (messageDiv._thinkingAnimation) {
+                    clearInterval(messageDiv._thinkingAnimation);
+                    delete messageDiv._thinkingAnimation;
+                }
+                eventSource.close();
+                
+                // If we got at least some response, consider it partial success
+                if (fullResponse) {
+                    console.log('Stream interrupted but got partial response, resolving with what we have');
+                    isStreamComplete = true;
+                    // Wait for render to finish
+                    setTimeout(() => {
+                        resolve({
+                            query: query,
+                            classification: 'unified',
+                            confidence: 1.0,
+                            severity: 'info',
+                            answer: fullResponse,
+                            sources: [],
+                            disclaimer: 'Always consult your healthcare provider.'
+                        });
+                    }, 100);
+                } else {
+                    reject(new Error('Failed to get response from server'));
+                }
+            };
+
+            // Handle stream end - this is the proper completion event
+            eventSource.addEventListener('end', () => {
+                console.log('Received end event, stream completed');
+                // Clear thinking animation
+                if (messageDiv._thinkingAnimation) {
+                    clearInterval(messageDiv._thinkingAnimation);
+                    delete messageDiv._thinkingAnimation;
+                }
+                eventSource.close();
+                isStreamComplete = true;
+                
+                // Wait for progressive rendering to finish before resolving
+                const waitForRender = setInterval(() => {
+                    if (displayedResponse.length >= fullResponse.length) {
+                        clearInterval(waitForRender);
+                        clearInterval(renderInterval);
+                        console.log(`Stream complete. Full response length: ${fullResponse.length}, displayed: ${displayedResponse.length}`);
+                        resolve({
+                            query: query,
+                            classification: 'unified',
+                            confidence: 1.0,
+                            severity: 'info',
+                            answer: fullResponse,
+                            sources: [],
+                            disclaimer: 'Always consult your healthcare provider.'
+                        });
+                    }
+                }, 50);
+                
+                // Timeout after 5 seconds to prevent infinite wait
+                setTimeout(() => {
+                    clearInterval(waitForRender);
+                    clearInterval(renderInterval);
+                    console.log('Render timeout - resolving with current response');
+                    resolve({
+                        query: query,
+                        classification: 'unified',
+                        confidence: 1.0,
+                        severity: 'info',
+                        answer: fullResponse,
+                        sources: [],
+                        disclaimer: 'Always consult your healthcare provider.'
+                    });
+                }, 5000);
+            });
+
+            // Handle user scroll to disable auto-scroll
+            const handleScroll = () => {
+                const container = this.chatMessages;
+                const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 100;
+                autoScrollEnabled = isAtBottom;
+            };
+
+            this.chatMessages.addEventListener('scroll', handleScroll);
+
+            // Clean up event listener when stream ends
+            eventSource.addEventListener('end', () => {
+                this.chatMessages.removeEventListener('scroll', handleScroll);
+            });
+        });
+    }
+
+    async sendRegularQuery(query) {
+        const response = await fetch('/api/query', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                query: query,
+                conversation_id: this.conversationId
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server error: ${response.status} - ${errorText}`);
+        }
+
+        return await response.json();
+    }
+
+    addThinkingMessage() {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant thinking';
+        messageDiv.id = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="message-role">Diabetes Buddy</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="answer">
+                <div class="thinking-message">
+                    <span class="thinking-text">Thinking</span>
+                    <div class="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Animate the thinking text
+        const thinkingText = messageDiv.querySelector('.thinking-text');
+        let dots = 0;
+        const animateThinking = () => {
+            dots = (dots + 1) % 4;
+            thinkingText.textContent = 'Thinking' + '.'.repeat(dots);
+        };
+        const animationInterval = setInterval(animateThinking, 500);
+        
+        // Store the interval on the message div so we can clear it later
+        messageDiv._thinkingAnimation = animationInterval;
+
+        this.chatMessages.appendChild(messageDiv);
+        this.scrollToBottom();
+        return messageDiv;
+    }
+
+    updateStreamingMessage(messageDiv, content) {
+        const contentDiv = messageDiv.querySelector('.message-content');
+        if (contentDiv) {
+            // Render markdown for the content
+            contentDiv.innerHTML = this.renderMarkdown(content);
+        }
+    }
+
+    renderMarkdown(text) {
+        let html = text;
+        
+        // Try to parse with marked.js
+        if (window.marked) {
+            try {
+                html = marked.parse(text);
+                console.log('[renderMarkdown] ✓ Marked.js successfully parsed markdown');
+            } catch (e) {
+                console.error('[renderMarkdown] Marked.js parse error, using fallback:', e);
+                html = this.fallbackMarkdownToHTML(text);
+            }
+        } else {
+            console.warn('[renderMarkdown] Marked.js not available, using fallback');
+            html = this.fallbackMarkdownToHTML(text);
+        }
+        
+        // Sanitize HTML to prevent XSS
+        if (window.DOMPurify) {
+            html = DOMPurify.sanitize(html, {
+                ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 
+                               'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'a', 'sup', 'sub', 'div', 'span'],
+                ALLOWED_ATTR: ['class', 'id', 'title', 'data-ref', 'href'],
+                ALLOW_DATA_ATTR: true
+            });
+            console.log('[renderMarkdown] ✓ HTML sanitized with DOMPurify');
+        } else {
+            console.warn('[renderMarkdown] DOMPurify not available - HTML not sanitized (potential XSS risk)');
+        }
+        
+        return html;
+    }
+
+    scrollToBottom() {
+        // Smooth scroll to bottom
+        this.chatMessages.scrollTo({
+            top: this.chatMessages.scrollHeight,
+            behavior: 'smooth'
+        });
     }
 
     async sendQueryWithRetry(query, maxRetries = 2) {
@@ -427,10 +1136,24 @@ class DiabetesBuddyChat {
         this.chatMessages.appendChild(messageDiv);
     }
 
-    addMessage(text, type = 'assistant', animate = true) {
+    addMessage(text, type = 'assistant', animate = true, timestamp = null) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}`;
         if (!animate) messageDiv.style.animation = 'none';
+
+        // Add header for user messages
+        if (type === 'user') {
+            const header = document.createElement('div');
+            header.className = 'message-header';
+            const timeStr = timestamp
+                ? new Date(timestamp).toLocaleTimeString()
+                : new Date().toLocaleTimeString();
+            header.innerHTML = `
+                <span class="message-role">You</span>
+                <span class="message-timestamp">${timeStr}</span>
+            `;
+            messageDiv.appendChild(header);
+        }
 
         const p = document.createElement('p');
         p.textContent = text;
@@ -466,45 +1189,327 @@ class DiabetesBuddyChat {
         if (element) element.remove();
     }
 
-    addAssistantMessage(data, animate = true) {
+    addAssistantMessage(data, animate = true, timestamp = null) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message assistant';
+        messageDiv.id = `msg-${Date.now()}`;  // Unique ID for feedback
         if (!animate) messageDiv.style.animation = 'none';
 
-        const { cleaned, refList } = this.extractAndFormatReferences(data.answer, data.sources);
+        // Add message header with timestamp
+        const header = document.createElement('div');
+        header.className = 'message-header';
+        const timeStr = timestamp
+            ? new Date(timestamp).toLocaleTimeString()
+            : new Date().toLocaleTimeString();
+        header.innerHTML = `
+            <span class="message-role">Diabetes Buddy</span>
+            <span class="message-timestamp">${timeStr}</span>
+        `;
+        messageDiv.appendChild(header);
+
+        // Ensure data.answer exists
+        const answer = data.answer || '';
+        const sources = data.sources || [];
+        const { cleaned, refList } = this.extractAndFormatReferences(answer, sources);
         const answerContainer = this.formatText(cleaned, refList);
 
-        // Add classification badge for glooko_data queries
-        if (data.classification === 'glooko_data') {
+        // Add LLM provider badge (new)
+        if (data.llm_info) {
+            const llmBadge = this.createLLMProviderBadge(data.llm_info);
+            answerContainer.insertBefore(llmBadge, answerContainer.firstChild);
+        }
+
+        // Add knowledge source badge (replaces old classification badge)
+        if (data.primary_source_type || data.knowledge_breakdown) {
+            const badge = this.createSourceBadge(data);
+            answerContainer.insertBefore(badge, answerContainer.firstChild);
+        } else if (data.classification === 'glooko_data') {
+            // Fallback for old API responses
             const badge = document.createElement('div');
             badge.className = 'classification-badge glooko-data';
             badge.innerHTML = '📊 Your Glooko Data';
             answerContainer.insertBefore(badge, answerContainer.firstChild);
         }
 
-        // Add severity indicator with icon
-        const severityDiv = document.createElement('div');
-        severityDiv.className = `severity ${data.severity}`;
-        severityDiv.setAttribute('role', 'status');
-        const icons = { INFO: '\u2713', WARNING: '\u26A0', BLOCKED: '\u2716' };
-        severityDiv.innerHTML = `<span class="severity-icon">${icons[data.severity] || ''}</span> ${data.severity}`;
-        answerContainer.insertBefore(severityDiv, answerContainer.firstChild);
-
         messageDiv.appendChild(answerContainer);
 
-        // Disclaimer (if needed)
-        if (data.severity !== 'INFO' || data.classification === 'glooko_data') {
-            const disclaimer = document.createElement('div');
-            disclaimer.className = 'disclaimer-warning';
-            disclaimer.setAttribute('role', 'alert');
-            disclaimer.textContent = data.disclaimer;
-            messageDiv.appendChild(disclaimer);
+        // Add categorized sources section if sources available
+        if (sources && sources.length > 0) {
+            const sourcesSection = this.createCategorizedSources(
+                sources,
+                data.knowledge_breakdown
+            );
+            messageDiv.appendChild(sourcesSection);
+        }
+
+        // Add feedback buttons
+        const feedbackSection = this.createFeedbackSection(messageDiv.id, data);
+        messageDiv.appendChild(feedbackSection);
+
+        // Update knowledge base display with actual breakdown from response
+        if (data.knowledge_breakdown) {
+            this.updateKnowledgeBreakdownDisplay(data.knowledge_breakdown);
         }
 
         this.chatMessages.appendChild(messageDiv);
         this.scrollToBottom();
     }
 
+    /**
+     * Create LLM provider badge showing which model was used.
+     * @param {Object} llmInfo - LLM info object with provider, model, cost, routing_reason
+     * @returns {HTMLElement} Badge element
+     */
+    createLLMProviderBadge(llmInfo) {
+        const badge = document.createElement('div');
+        badge.className = 'llm-provider-badge';
+        
+        const provider = llmInfo.provider || 'unknown';
+        const model = llmInfo.model || 'unknown';
+        const cost = llmInfo.estimated_cost || 0;
+        const routingReason = llmInfo.routing_reason || '';
+        const fallbackUsed = llmInfo.fallback_used || false;
+        
+        let providerIcon, providerLabel;
+        
+        switch (provider.toLowerCase()) {
+            case 'groq':
+                providerIcon = '⚡';
+                providerLabel = `Groq ${model.split('/').pop() || 'OSS'}`;
+                break;
+            case 'gemini':
+                providerIcon = '✨';
+                providerLabel = `Gemini ${model.split('-').pop() || 'Flash'}`;
+                break;
+            case 'openai':
+                providerIcon = '🔷';
+                providerLabel = `GPT ${model.split('-').pop() || '4'}`;
+                break;
+            case 'anthropic':
+                providerIcon = '🧠';
+                providerLabel = `Claude ${model.split('-')[1] || 'Sonnet'}`;
+                break;
+            default:
+                providerIcon = '🤖';
+                providerLabel = provider;
+        }
+        
+        // Build tooltip with details
+        let tooltip = `LLM Provider: ${providerLabel}`;
+        if (routingReason) {
+            tooltip += `\nRouting: ${routingReason}`;
+        }
+        if (cost > 0) {
+            tooltip += `\nCost: $${cost.toFixed(6)}`;
+        }
+        if (fallbackUsed) {
+            tooltip += '\n⚠️ Fallback used (primary provider failed)';
+        }
+        
+        badge.setAttribute('data-tooltip', tooltip);
+        badge.className = fallbackUsed ? 'llm-provider-badge fallback-used' : 'llm-provider-badge';
+        badge.innerHTML = `${providerIcon} ${providerLabel}`;
+        
+        return badge;
+    }
+
+    /**
+     * Create knowledge source badge based on response metadata.
+     * @param {Object} data - Response data with knowledge_breakdown
+     * @returns {HTMLElement} Badge element
+     */
+    createSourceBadge(data) {
+        const badge = document.createElement('div');
+        badge.className = 'source-badge';
+
+        const primaryType = data.primary_source_type || 'unknown';
+        let icon, label, tooltip, badgeClass;
+
+        switch (primaryType) {
+            case 'rag':
+                icon = '🟢';
+                label = 'Evidence-Based';
+                badgeClass = 'evidence-based';
+                tooltip = 'Response based on authoritative device documentation and clinical guidelines';
+                break;
+            case 'hybrid':
+                icon = '🟡';
+                label = 'Mixed Sources';
+                badgeClass = 'mixed-sources';
+                tooltip = 'Response combines device documentation with general medical knowledge';
+                break;
+            case 'parametric':
+                icon = '🔵';
+                label = 'General Guidance';
+                badgeClass = 'general-guidance';
+                tooltip = 'Response based primarily on general diabetes knowledge - verify device-specific info with your manual';
+                break;
+            case 'glooko':
+                icon = '📊';
+                label = 'Personal Data';
+                badgeClass = 'personal-data';
+                tooltip = 'Response includes analysis of your uploaded Glooko data';
+                break;
+            default:
+                icon = '💬';
+                label = 'Response';
+                badgeClass = '';
+                tooltip = '';
+        }
+
+        badge.classList.add(...badgeClass.split(' ').filter(c => c));
+        badge.setAttribute('data-tooltip', tooltip);
+        badge.setAttribute('role', 'status');
+        badge.setAttribute('aria-label', label);
+
+        badge.innerHTML = `
+            <span class="badge-icon">${icon}</span>
+            <span class="badge-label">${label}</span>
+        `;
+
+        return badge;
+    }
+
+    /**
+     * Create categorized sources section.
+     * @param {Array} sources - Source objects from API
+     * @param {Object} breakdown - Knowledge breakdown object
+     * @returns {HTMLElement} Sources section element
+     */
+    createCategorizedSources(sources, breakdown) {
+        const container = document.createElement('div');
+        container.className = 'sources-categorized';
+
+        // Categorize sources
+        const categories = {
+            device: { icon: '📘', label: 'Device Documentation', items: [] },
+            clinical: { icon: '🏥', label: 'Clinical Guidelines', items: [] },
+            personal: { icon: '📊', label: 'Your Data', items: [] },
+            general: { icon: '💭', label: 'General Knowledge', items: [] }
+        };
+
+        if (sources && sources.length > 0) {
+            sources.forEach(source => {
+                const sourceName = (source.source || '').toLowerCase();
+                const item = {
+                    name: source.source,
+                    excerpt: source.excerpt
+                };
+
+                if (sourceName.includes('glooko') || sourceName.includes('your')) {
+                    categories.personal.items.push(item);
+                } else if (sourceName.includes('ada') || sourceName.includes('guidelines') || sourceName.includes('standards')) {
+                    categories.clinical.items.push(item);
+                } else if (sourceName.includes('general') || sourceName.includes('parametric')) {
+                    categories.general.items.push(item);
+                } else {
+                    categories.device.items.push(item);
+                }
+            });
+        }
+
+        // Add parametric source if breakdown indicates it was used
+        if (breakdown && breakdown.parametric_ratio > 0 && categories.general.items.length === 0) {
+            categories.general.items.push({
+                name: 'General Medical Knowledge',
+                excerpt: 'Physiological and biochemical reasoning'
+            });
+        }
+
+        // Render header
+        const header = document.createElement('div');
+        header.className = 'ref-title';
+        header.textContent = '📚 Sources';
+        container.appendChild(header);
+
+        // Render non-empty categories
+        Object.entries(categories).forEach(([key, cat]) => {
+            if (cat.items.length === 0) return;
+
+            const categoryDiv = document.createElement('div');
+            categoryDiv.className = 'source-category';
+
+            categoryDiv.innerHTML = `
+                <div class="source-category-header">
+                    <span class="source-category-icon">${cat.icon}</span>
+                    <span>${cat.label}</span>
+                </div>
+                <div class="source-category-items">
+                    ${cat.items.map(item => `
+                        <div class="source-item">
+                            <span>${item.name}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            container.appendChild(categoryDiv);
+        });
+
+        return container;
+    }
+
+    /**
+     * Create feedback buttons for response quality tracking.
+     * @param {string} messageId - Unique message identifier
+     * @param {Object} data - Response data for logging
+     * @returns {HTMLElement} Feedback section element
+     */
+    createFeedbackSection(messageId, data) {
+        const section = document.createElement('div');
+        section.className = 'feedback-section';
+        section.setAttribute('role', 'group');
+        section.setAttribute('aria-label', 'Response feedback');
+
+        section.innerHTML = `
+            <span class="feedback-label">Was this helpful?</span>
+            <button class="feedback-btn helpful" data-feedback="helpful" aria-label="Mark as helpful">
+                👍 Helpful
+            </button>
+            <button class="feedback-btn not-helpful" data-feedback="not-helpful" aria-label="Mark as not helpful">
+                👎 Not Helpful
+            </button>
+        `;
+
+        // Add click handlers
+        const self = this;
+        section.querySelectorAll('.feedback-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Remove selected from siblings
+                section.querySelectorAll('.feedback-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+
+                // Log feedback
+                self.logResponseFeedback(messageId, btn.dataset.feedback, data);
+            });
+        });
+
+        return section;
+    }
+
+    /**
+     * Log user feedback on response quality.
+     * @param {string} messageId - Message identifier
+     * @param {string} feedback - 'helpful' or 'not-helpful'
+     * @param {Object} data - Response metadata
+     */
+    async logResponseFeedback(messageId, feedback, data) {
+        try {
+            await fetch('/api/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message_id: messageId,
+                    feedback: feedback,
+                    primary_source_type: data.primary_source_type,
+                    knowledge_breakdown: data.knowledge_breakdown,
+                    timestamp: new Date().toISOString()
+                })
+            });
+        } catch (error) {
+            console.warn('Failed to log feedback:', error);
+        }
+    }
 
 
     // ============================================
@@ -563,6 +1568,84 @@ class DiabetesBuddyChat {
         return sourceKeywords.some(kw => text.toLowerCase().includes(kw));
     }
 
+    /**
+     * Fallback markdown-to-HTML converter when marked.js is unavailable.
+     * Handles basic markdown patterns: bold, italics, headers, lists.
+     */
+    fallbackMarkdownToHTML(text) {
+        let html = text;
+        
+        // Headers (# - ######)
+        html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+        html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+        html = html.replace(/^#### (.*?)$/gm, '<h4>$1</h4>');
+        html = html.replace(/^##### (.*?)$/gm, '<h5>$1</h5>');
+        html = html.replace(/^###### (.*?)$/gm, '<h6>$1</h6>');
+        
+        // Bold: **text** and __text__
+        html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/__(.*?)__/g, '<strong>$1</strong>');
+        
+        // Italics: *text* and _text_
+        html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        html = html.replace(/_(.*?)_/g, '<em>$1</em>');
+        
+        // Lists: numbered and unnumbered
+        const lines = html.split('\n');
+        const processedLines = [];
+        let inList = false;
+        let listType = null;
+        
+        for (let line of lines) {
+            // Ordered list (1., 2., etc.)
+            if (/^\d+\.\s/.test(line)) {
+                if (!inList || listType !== 'ol') {
+                    if (inList) processedLines.push(`</${listType}>`);
+                    processedLines.push('<ol>');
+                    inList = true;
+                    listType = 'ol';
+                }
+                line = line.replace(/^\d+\.\s(.*)$/, '<li>$1</li>');
+                processedLines.push(line);
+            }
+            // Unordered list (-, *, +)
+            else if (/^[-*+]\s/.test(line)) {
+                if (!inList || listType !== 'ul') {
+                    if (inList) processedLines.push(`</${listType}>`);
+                    processedLines.push('<ul>');
+                    inList = true;
+                    listType = 'ul';
+                }
+                line = line.replace(/^[-*+]\s(.*)$/, '<li>$1</li>');
+                processedLines.push(line);
+            }
+            // Empty line or non-list line
+            else {
+                if (inList && line.trim()) {
+                    processedLines.push(`</${listType}>`);
+                    inList = false;
+                    listType = null;
+                }
+                if (line.trim()) {
+                    processedLines.push(`<p>${line}</p>`);
+                }
+            }
+        }
+        
+        if (inList) {
+            processedLines.push(`</${listType}>`);
+        }
+        
+        html = processedLines.join('\n');
+        
+        // Line breaks: double newlines become paragraphs (already handled above)
+        // Single newlines become <br>
+        html = html.replace(/\n(?!<)/g, '<br>\n');
+        
+        return html;
+    }
+
     formatLineWithReferences(text, references) {
         let line = text;
         references.forEach((ref, idx) => {
@@ -589,12 +1672,32 @@ class DiabetesBuddyChat {
         const withRefs = this.formatLineWithReferences(withoutDisclaimers, references);
 
         let html = withRefs;
+        
+        // Parse markdown with marked.js
         if (window.marked) {
-            html = marked.parse(withRefs);
+            try {
+                html = marked.parse(withRefs);
+                console.log('[formatText] ✓ Marked.js successfully parsed markdown');
+            } catch (e) {
+                console.error('[formatText] Marked.js parse error, using fallback:', e);
+                html = this.fallbackMarkdownToHTML(withRefs);
+            }
         } else {
-            html = withRefs
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/__(.*?)__/g, '<strong>$1</strong>');
+            console.warn('[formatText] Marked.js not available, using fallback HTML conversion');
+            html = this.fallbackMarkdownToHTML(withRefs);
+        }
+        
+        // Sanitize HTML to prevent XSS
+        if (window.DOMPurify) {
+            html = DOMPurify.sanitize(html, {
+                ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 
+                               'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'a', 'sup', 'sub', 'div', 'span'],
+                ALLOWED_ATTR: ['class', 'id', 'title', 'data-ref', 'href'],
+                ALLOW_DATA_ATTR: true
+            });
+            console.log('[formatText] ✓ HTML sanitized with DOMPurify');
+        } else {
+            console.warn('[formatText] DOMPurify not available - HTML not sanitized (potential XSS risk)');
         }
 
         container.innerHTML = html;
@@ -640,13 +1743,11 @@ class DiabetesBuddyChat {
     // ============================================
 
     showSourceDetails(source) {
-        const confidence = source.confidence ? `${(source.confidence * 100).toFixed(0)}%` : 'N/A';
         const excerpt = source.full_excerpt || source.excerpt || 'No excerpt available';
 
         this.modalBody.innerHTML = `
             <h2 id="modalTitle">Source Details</h2>
             <p><strong>Source:</strong> ${source.citation || source.source}</p>
-            <p><strong>Confidence:</strong> ${confidence}</p>
             <div class="source-excerpt">
                 <strong>Excerpt:</strong>
                 <p class="excerpt-text">${excerpt}</p>
@@ -1287,10 +2388,11 @@ class DiabetesBuddyChat {
             allSources.slice(0, 5).forEach(source => {
                 const statusClass = source.status || 'current';
                 const statusLabel = statusClass.charAt(0).toUpperCase() + statusClass.slice(1);
-                
+                const displayName = this.getSourceDisplayName(source);
+
                 html += `
                     <div class="kb-source-item">
-                        <div class="kb-source-name" title="${source.name}">${source.name}</div>
+                        <div class="kb-source-name" title="${displayName}">${displayName}</div>
                         <div class="kb-source-status">
                             <span class="kb-status-badge ${statusClass}">${statusLabel}</span>
                         </div>
@@ -1335,6 +2437,7 @@ class DiabetesBuddyChat {
     openSettings() {
         this.settingsModal?.classList.add('active');
         this.loadSettingsSources();
+        this.loadDeviceProfile();
     }
 
     closeSettings() {
@@ -1411,6 +2514,7 @@ class DiabetesBuddyChat {
         try {
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('session_id', this.sessionId);
 
             status.textContent = 'Uploading...';
             progressFill.style.width = '30%';
@@ -1432,6 +2536,8 @@ class DiabetesBuddyChat {
             progressFill.style.width = '100%';
             status.textContent = `Uploaded: ${result.display_name}`;
 
+            await this.handleDevicePromptAfterUpload(result);
+
             // Refresh lists
             setTimeout(() => {
                 progress?.setAttribute('hidden', '');
@@ -1448,6 +2554,376 @@ class DiabetesBuddyChat {
                 progress?.setAttribute('hidden', '');
                 uploadArea?.removeAttribute('hidden');
             }, 3000);
+        }
+    }
+
+    async handleDevicePromptAfterUpload(uploadResult) {
+        const profileComplete = uploadResult?.device_profile_complete === true;
+
+        if (profileComplete) {
+            if (uploadResult.device_profile) {
+                this.renderDeviceProfile(uploadResult.device_profile);
+            }
+            return;
+        }
+
+        let profile = null;
+        try {
+            profile = await this.getDeviceProfile();
+        } catch (error) {
+            console.warn('Failed to load device profile:', error);
+        }
+
+        if (profile?.is_complete) {
+            this.renderDeviceProfile(profile);
+            return;
+        }
+
+        let detectionResult = null;
+        try {
+            detectionResult = await this.detectDevicesFromPDF(uploadResult.filename);
+        } catch (err) {
+            console.warn('Device detection skipped:', err);
+        }
+
+        this.openSettings();
+
+        if (!detectionResult || (!detectionResult.pump && !detectionResult.cgm)) {
+            this.openDeviceEditor();
+        }
+    }
+
+    async getDeviceProfile() {
+        const response = await fetch(`/api/devices/profile?session_id=${encodeURIComponent(this.sessionId)}`);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load device profile');
+        }
+        return response.json();
+    }
+
+    async loadDeviceProfile() {
+        try {
+            const profile = await this.getDeviceProfile();
+            if (profile?.exists) {
+                this.renderDeviceProfile(profile);
+            }
+            // Always ensure form is hidden when loading profile
+            const editForm = document.getElementById('deviceEditForm');
+            if (editForm) editForm.setAttribute('hidden', '');
+            const detectionResults = document.querySelector('.device-detection-results');
+            if (detectionResults) detectionResults.removeAttribute('hidden');
+        } catch (error) {
+            console.warn('No device profile available:', error);
+        }
+    }
+
+    renderDeviceProfile(profile) {
+        if (!profile || (!profile.pump && !profile.cgm)) {
+            return;
+        }
+
+        this.showDetectedDevices({
+            pump: profile.pump || null,
+            cgm: profile.cgm || null,
+            pump_confidence: 1,
+            cgm_confidence: 1
+        });
+    }
+
+    openDeviceEditor(defaults = {}) {
+        const editForm = document.getElementById('deviceEditForm');
+        const pumpSelect = document.getElementById('pumpSelect');
+        const cgmSelect = document.getElementById('cgmSelect');
+        const detectionResults = document.querySelector('.device-detection-results');
+
+        if (pumpSelect) pumpSelect.value = defaults.pump || '';
+        if (cgmSelect) cgmSelect.value = defaults.cgm || '';
+
+        editForm?.removeAttribute('hidden');
+        detectionResults?.setAttribute('hidden', '');
+        document.getElementById('deviceConfirmationArea')?.removeAttribute('hidden');
+        document.getElementById('noDevicesMessage')?.setAttribute('hidden', '');
+    }
+
+    // ============================================
+    // Device Confirmation
+    // ============================================
+
+    setupDeviceConfirmation() {
+        // Get device confirmation elements
+        const deviceConfirmArea = document.getElementById('deviceConfirmationArea');
+        const confirmBtn = document.getElementById('confirmDevicesBtn');
+        const editBtn = document.getElementById('editDevicesBtn');
+        const settingsEditBtn = document.getElementById('editDevicesSettingsBtn');
+        const saveBtn = document.getElementById('saveDevicesBtn');
+        const cancelBtn = document.getElementById('cancelEditBtn');
+        const editForm = document.getElementById('deviceEditForm');
+        const pumpSelect = document.getElementById('pumpSelect');
+        const cgmSelect = document.getElementById('cgmSelect');
+
+        if (!confirmBtn || !editBtn || !saveBtn || !cancelBtn) {
+            console.warn('Device confirmation buttons not found in DOM');
+            return;
+        }
+
+        // Confirm devices button - call override API and close
+        confirmBtn.addEventListener('click', async () => {
+            const detectedDevices = this.getDetectedDevices();
+            if (!detectedDevices.pump && !detectedDevices.cgm) {
+                alert('No devices detected. Please edit or upload a device manual.');
+                return;
+            }
+
+            try {
+                const saved = await this.saveDeviceOverride(
+                    detectedDevices.pump,
+                    detectedDevices.cgm
+                );
+                this.renderDeviceProfile(saved);
+                deviceConfirmArea?.removeAttribute('hidden');
+                alert('Devices confirmed and saved!');
+            } catch (error) {
+                console.error('Error confirming devices:', error);
+                alert(`Failed to confirm devices: ${error.message}`);
+            }
+        });
+
+        // Edit devices button - show form
+        editBtn.addEventListener('click', async () => {
+            let defaults = this.getDetectedDevices();
+            if (!defaults.pump && !defaults.cgm) {
+                try {
+                    const profile = await this.getDeviceProfile();
+                    if (profile?.exists) {
+                        defaults = { pump: profile.pump, cgm: profile.cgm };
+                    }
+                } catch (error) {
+                    console.warn('Failed to load profile for edit:', error);
+                }
+            }
+            this.openDeviceEditor(defaults);
+        });
+
+        if (settingsEditBtn) {
+            settingsEditBtn.addEventListener('click', async () => {
+                let defaults = {};
+                try {
+                    const profile = await this.getDeviceProfile();
+                    if (profile?.exists) {
+                        defaults = { pump: profile.pump, cgm: profile.cgm };
+                    }
+                } catch (error) {
+                    console.warn('Failed to load profile for settings edit:', error);
+                }
+                this.openDeviceEditor(defaults);
+            });
+        }
+
+        // Save devices button - call override API with form values
+        saveBtn.addEventListener('click', async () => {
+            const pump = pumpSelect?.value || '';
+            const cgm = cgmSelect?.value || '';
+
+            if (!pump && !cgm) {
+                alert('Please select at least one device');
+                return;
+            }
+
+            try {
+                const saved = await this.saveDeviceOverride(pump, cgm);
+                // Reset form and show saved devices
+                editForm?.setAttribute('hidden', '');
+                document.querySelector('.device-detection-results')?.removeAttribute('hidden');
+                deviceConfirmArea?.removeAttribute('hidden');
+                pumpSelect.value = '';
+                cgmSelect.value = '';
+                this.renderDeviceProfile(saved);
+                alert('Devices saved successfully!');
+            } catch (error) {
+                console.error('Error saving devices:', error);
+                alert(`Failed to save devices: ${error.message}`);
+            }
+        });
+
+        // Cancel edit button - hide form
+        cancelBtn.addEventListener('click', () => {
+            editForm?.setAttribute('hidden', '');
+            document.querySelector('.device-detection-results')?.removeAttribute('hidden');
+            pumpSelect.value = '';
+            cgmSelect.value = '';
+        });
+    }
+
+    /**
+     * Get currently selected devices from the detected devices grid
+     */
+    getDetectedDevices() {
+        const detectedDevices = document.getElementById('detectedDevices');
+        const cards = detectedDevices?.querySelectorAll('.device-card.selected') || [];
+        
+        let pump = '', cgm = '';
+        cards.forEach(card => {
+            const device = card.dataset.device;
+            if (card.dataset.type === 'pump') pump = device;
+            if (card.dataset.type === 'cgm') cgm = device;
+        });
+
+        return { pump, cgm };
+    }
+
+    /**
+     * Save device override via API
+     */
+    async saveDeviceOverride(pump, cgm) {
+        const response = await fetch('/api/devices/override', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                session_id: this.sessionId,
+                pump: pump || null,
+                cgm: cgm || null,
+                override_source: 'user'
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to save device override');
+        }
+
+        return response.json();
+    }
+
+    /**
+     * Show detected devices in confirmation area with confidence badges
+     */
+    showDetectedDevices(detectedDevices) {
+        const deviceConfirmArea = document.getElementById('deviceConfirmationArea');
+        const detectedDevicesGrid = document.getElementById('detectedDevices');
+        const noDevicesMsg = document.getElementById('noDevicesMessage');
+
+        if (!detectedDevices || (Object.keys(detectedDevices).length === 0)) {
+            // No devices detected
+            if (noDevicesMsg) noDevicesMsg.removeAttribute('hidden');
+            if (deviceConfirmArea) deviceConfirmArea.setAttribute('hidden', '');
+            return;
+        }
+
+        // Clear previous cards
+        if (detectedDevicesGrid) {
+            detectedDevicesGrid.innerHTML = '';
+
+            // Add pump device card if detected
+            if (detectedDevices.pump) {
+                const pumpCard = this.createDeviceCard(
+                    detectedDevices.pump,
+                    'pump',
+                    detectedDevices.pump_confidence || 0.8
+                );
+                detectedDevicesGrid.appendChild(pumpCard);
+            }
+
+            // Add CGM device card if detected
+            if (detectedDevices.cgm) {
+                const cgmCard = this.createDeviceCard(
+                    detectedDevices.cgm,
+                    'cgm',
+                    detectedDevices.cgm_confidence || 0.8
+                );
+                detectedDevicesGrid.appendChild(cgmCard);
+            }
+        }
+
+        // Show confirmation area, hide "no devices" message
+        if (deviceConfirmArea) deviceConfirmArea.removeAttribute('hidden');
+        if (noDevicesMsg) noDevicesMsg.setAttribute('hidden', '');
+
+        // Reset edit form visibility
+        const editForm = document.getElementById('deviceEditForm');
+        if (editForm) editForm.setAttribute('hidden', '');
+        const detectionResults = document.querySelector('.device-detection-results');
+        if (detectionResults) detectionResults.removeAttribute('hidden');
+    }
+
+    /**
+     * Create a device card element with confidence badge
+     */
+    createDeviceCard(device, type, confidence) {
+        const card = document.createElement('div');
+        card.className = 'device-card selected';
+        card.dataset.device = device;
+        card.dataset.type = type;
+
+        const confidencePercent = Math.round(confidence * 100);
+        const badgeLevel = confidence > 0.85 ? 'high' : confidence > 0.7 ? 'medium' : 'low';
+
+        const typeLabel = type === 'pump' ? '💉 Pump' : '📊 CGM';
+        const deviceLabel = this.formatDeviceLabel(device);
+
+        card.innerHTML = `
+            <div class="device-info">
+                <span class="device-type">${typeLabel}</span>
+                <span class="device-name">${deviceLabel}</span>
+            </div>
+            <span class="confidence-badge ${badgeLevel}">${confidencePercent}%</span>
+        `;
+
+        return card;
+    }
+
+    /**
+     * Format device name for display
+     */
+    formatDeviceLabel(device) {
+        const deviceLabels = {
+            'tandem': 'Tandem',
+            'medtronic': 'Medtronic',
+            'omnipod': 'Omnipod',
+            'ypsomed': 'Ypsomed',
+            'roche': 'Roche',
+            'sooil': 'SooIL',
+            'dexcom': 'Dexcom',
+            'libre': 'Freestyle Libre',
+            'guardian': 'Medtronic Guardian'
+        };
+        return deviceLabels[device] || device;
+    }
+
+    /**
+     * Detect devices from uploaded PDF and show confirmation UI
+     */
+    async detectDevicesFromPDF(filename) {
+        try {
+            const response = await fetch(`/api/detect-devices?filename=${encodeURIComponent(filename)}`, {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Device detection failed');
+            }
+
+            const result = await response.json();
+            console.log('Device detection result:', result);
+
+            const detected = {
+                pump: result.pump || null,
+                cgm: result.cgm || null,
+                pump_confidence: result.pump_confidence || 0,
+                cgm_confidence: result.cgm_confidence || 0
+            };
+
+            // Show detected devices in confirmation area
+            this.showDetectedDevices(detected);
+
+            return detected;
+
+        } catch (error) {
+            console.error('Device detection error:', error);
+            // Don't fail the upload, just skip device detection
+            console.warn('Skipping device detection UI');
+            return null;
         }
     }
 
