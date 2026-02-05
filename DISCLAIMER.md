@@ -1,23 +1,56 @@
-# ⚠️ CRITICAL NOTICE - SYSTEM NOT PRODUCTION READY
+# ⚠️ CRITICAL NOTICE - DEVELOPMENT STAGE SYSTEM
 
 **DO NOT USE FOR MEDICAL DECISIONS**
 
-This repository is in **active development** and contains known issues:
+This is a personal research project in active development. While safety guardrails are in place, the system is **not validated for clinical use**.
 
-1. **Hallucination Risk**: System may generate device-specific advice without verification
-2. **Incomplete Documentation**: README describes outdated architecture (v0.1.0, not current v0.3.0)
-3. **No Quality Validation**: Responses lack automated accuracy verification
-4. **Development Only**: Not validated for clinical use
+## What's Implemented (Feb 2026)
 
-## Current Status (Feb 2026)
-- Architecture refactored (product-agnostic, user uploads)
-- Safety validation: Pattern-based only (no hallucination detection)
-- Testing: Development suite only (no production monitoring)
+✅ **Safety Guardrails:**
+- Pattern-based dose detection (blocks specific numeric insulin advice)
+- Emergency fallback messages for system failures on dosing queries
+- Mandatory medical disclaimers on all responses
+- Safety audit logging to CSV for monitoring
 
-## For Developers
-See CURRENT_ARCHITECTURE_ANALYSIS.md for honest system assessment.
+✅ **Quality Validation:**
+- 19 unit tests for safety fallback system (all passing)
+- Response quality benchmark suite (41% pass rate on last run)
+- Source citation tracking with confidence scores
+
+✅ **Architecture:**
+- v0.3.0 documented in README.md
+- Hybrid RAG + parametric knowledge blending (transparent)
+- Emergency fallbacks for Groq API failures
+
+## What's NOT Implemented
+
+❌ **No automated hallucination detection** - System can still generate device-specific advice beyond RAG coverage
+❌ **No production monitoring** - No real-time system health tracking
+❌ **No external validation** - Responses not reviewed by medical professionals
+❌ **Limited source coverage** - Device manuals must be manually uploaded for specific advice
+
+## Current Limitations
+
+1. **Responses may blend LLM knowledge with RAG sources** when documentation is sparse
+2. **Device-specific advice requires manual PDF uploads** - Generic advice otherwise
+3. **Safety prioritizes blocking over completeness** - Some legitimate questions may get conservative responses
+4. **Pattern-based safety only** - May miss novel harmful patterns
 
 ## For Users
-**This tool is a personal research project.** Do not rely on its output for diabetes management without independent verification from qualified healthcare providers.
+
+**This tool is educational only.** Do not use it for:
+- Insulin dose calculations
+- Insulin adjustment decisions
+- Treatment plan changes
+- Emergency medical advice
+
+Always consult your qualified healthcare provider before making any diabetes management changes.
+
+## For Developers
+
+- See README.md for honest v0.3.0 architecture
+- See docs/SAFETY_AUDIT_20260205.md for safety validation findings
+- See tests/test_safety_fallback.py for safety test suite
+- See SAFETY_FALLBACK_IMPLEMENTATION.md for implementation details
 
 Last Updated: 2026-02-05
