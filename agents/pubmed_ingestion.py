@@ -152,7 +152,7 @@ def fetch_abstracts(pmids):
 def ingest_articles(articles):
     """Ingest articles into ChromaDB."""
     client = chromadb.PersistentClient(path=str(CHROMADB_PATH), settings=Settings(anonymized_telemetry=False))
-    collection = client.get_or_create_collection(name="research_papers", metadata={"hnsw:space": "cosine"})
+    collection = client.get_or_create_collection(name="research_papers", metadata={"hnsw:space": "cosine", "type": "knowledge_base", "source_category": "knowledge_base"})
 
     chunks_before = collection.count()
     total_chunks = 0
@@ -248,7 +248,7 @@ def main():
 
     # Validation query
     client = chromadb.PersistentClient(path=str(CHROMADB_PATH), settings=Settings(anonymized_telemetry=False))
-    collection = client.get_or_create_collection(name="research_papers", metadata={"hnsw:space": "cosine"})
+    collection = client.get_or_create_collection(name="research_papers", metadata={"hnsw:space": "cosine", "type": "knowledge_base", "source_category": "knowledge_base"})
     query_start = time.time()
     results = collection.query(query_texts=["What does recent research say about automated insulin delivery?"], n_results=3)
     query_time = (time.time() - query_start) * 1000

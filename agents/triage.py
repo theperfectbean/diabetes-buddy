@@ -435,6 +435,7 @@ Rules:
                 needs_knowledge_search = True
             elif category == QueryCategory.USER_SOURCES:
                 sources_to_search.append("user_sources")
+                logger.info("Searching user device manual collections (dynamic discovery)")
             elif category in category_to_source:
                 sources_to_search.append(category_to_source[category])
 

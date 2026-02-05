@@ -84,7 +84,7 @@ def ingest_articles(articles_data):
         path=str(CHROMADB_PATH), settings=Settings(anonymized_telemetry=False)
     )
     collection = client.get_or_create_collection(
-        name="wikipedia_education", metadata={"hnsw:space": "cosine"}
+        name="wikipedia_education", metadata={"hnsw:space": "cosine", "type": "knowledge_base", "source_category": "knowledge_base"}
     )
 
     chunks_before = collection.count()
@@ -193,7 +193,7 @@ def main():
         path=str(CHROMADB_PATH), settings=Settings(anonymized_telemetry=False)
     )
     collection = client.get_or_create_collection(
-        name="wikipedia_education", metadata={"hnsw:space": "cosine"}
+        name="wikipedia_education", metadata={"hnsw:space": "cosine", "type": "knowledge_base", "source_category": "knowledge_base"}
     )
     query_start = time.time()
     results = collection.query(

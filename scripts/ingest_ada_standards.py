@@ -182,7 +182,7 @@ def ingest_ada_pdfs(year: int, collection_name: str = "ada_standards") -> Tuple[
 
     collection = client.get_or_create_collection(
         name=collection_name,
-        metadata={"hnsw:space": "cosine"}
+        metadata={"hnsw:space": "cosine", "type": "clinical_guideline", "source_category": "clinical_guideline"}
     )
 
     pdf_dir = PDF_DATA_PATH
@@ -681,7 +681,7 @@ def ingest_from_pmc_bulk(year: int, force: bool = False) -> Tuple[int, List[str]
 
     collection = client.get_or_create_collection(
         name="ada_standards",
-        metadata={"hnsw:space": "cosine"}
+        metadata={"hnsw:space": "cosine", "type": "clinical_guideline", "source_category": "clinical_guideline"}
     )
 
     chunks_before = collection.count()
@@ -796,7 +796,7 @@ def ingest_ada_standards(articles: List[Dict], pmc_map: Dict[str, str], year: in
 
     collection = client.get_or_create_collection(
         name="ada_standards",
-        metadata={"hnsw:space": "cosine"}
+        metadata={"hnsw:space": "cosine", "type": "clinical_guideline", "source_category": "clinical_guideline"}
     )
 
     chunks_before = collection.count()

@@ -148,12 +148,23 @@ class ChromaDBBackend:
                 self.source_names[source_key] = self._pdf_to_display_name(pdf_path)
                 self.source_trust[source_key] = trust_level
 
+    def _directory_to_collection_type(self, rel_path: str) -> str:
+        """Determine collection type from its source directory path."""
+        rel_lower = rel_path.lower()
+        if "theory" in rel_lower or "guidelines" in rel_lower:
+            return "clinical_guideline"
+        if "knowledge-sources" in rel_lower:
+            return "knowledge_base"
+        # manuals/, user-sources/, and anything else → device_manual
+        return "device_manual"
+
     def _init_collections(self):
         """Initialize or load ChromaDB collections for discovered PDFs."""
         for source_key, rel_path in self.pdf_paths.items():
+            col_type = self._directory_to_collection_type(rel_path)
             collection = self.chroma_client.get_or_create_collection(
                 name=source_key,
-                metadata={"hnsw:space": "cosine"}
+                metadata={"hnsw:space": "cosine", "type": col_type, "source_category": col_type}
             )
 
             # Check if collection is empty (needs processing)
@@ -735,6 +746,109 @@ Your answer:"""
         combined.sort(key=lambda x: x.confidence, reverse=True)
         return combined[:top_k * 2]  # Return up to 2x top_k results
 
+    def get_collections_by_type(self, collection_type: str, fallback_to_all: bool = False) -> List[str]:
+        """
+        Dynamically discover collections by their metadata type.
+
+        Reusable helper for filtering collections by type tag. Used by
+        search_user_sources and potentially other search methods.
+
+        Args:
+            collection_type: Type to filter on (e.g. "device_manual", "clinical_guideline")
+            fallback_to_all: If True and no typed collections found, return all collection names
+
+        Returns:
+            List of collection names matching the requested type
+        """
+        try:
+            all_collections = self.chroma_client.list_collections()
+        except Exception as e:
+            logger.error(f"Could not list ChromaDB collections: {e}")
+            return []
+
+        matched = []
+        for col in all_collections:
+            meta = col.metadata or {}
+            if meta.get("type") == collection_type:
+                matched.append(col.name)
+
+        if not matched and fallback_to_all:
+            logger.warning(f"No collections with type='{collection_type}' found, returning all")
+            matched = [col.name for col in all_collections if not col.name.startswith("_")]
+
+        return matched
+
+    def search_user_sources(self, query: str, top_k: int = 5) -> List[SearchResult]:
+        """
+        Search user-uploaded device manuals (pumps, CGMs, closed-loop systems).
+
+        Uses collection metadata to dynamically discover device manual collections
+        at runtime. Product-agnostic - no hardcoded device names. Falls back to
+        heuristic filtering if metadata is missing.
+
+        Args:
+            query: Search query
+            top_k: Number of results to return
+
+        Returns:
+            List of SearchResult objects from user device manual collections
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # Primary: use metadata to find device manual collections
+        device_collections = self.get_collections_by_type("device_manual")
+
+        # Fallback: if no metadata found, use name-based heuristic
+        if not device_collections:
+            logger.warning("No collection metadata found, using fallback heuristic for user sources")
+            try:
+                all_collections = self.chroma_client.list_collections()
+                # Exclude known non-device collections by checking for metadata types
+                # that indicate clinical_guideline or knowledge_base
+                for col in all_collections:
+                    meta = col.metadata or {}
+                    col_type = meta.get("type")
+                    if col_type in ("clinical_guideline", "knowledge_base"):
+                        continue
+                    if col.name.startswith("_"):
+                        continue
+                    if col.count() > 0:
+                        device_collections.append(col.name)
+            except Exception as e:
+                logger.error(f"Fallback collection discovery failed: {e}")
+                return []
+
+        if not device_collections:
+            logger.info("No device manual collections found")
+            return []
+
+        logger.info(f"Searching {len(device_collections)} device manual collection(s)")
+        logger.debug(f"Device manual collections: {device_collections}")
+
+        # Search all device collections in parallel
+        all_results = []
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_col = {
+                executor.submit(self._search_collection, col_name, query, top_k): col_name
+                for col_name in device_collections
+            }
+
+            for future in as_completed(future_to_col):
+                col_name = future_to_col[future]
+                try:
+                    results = future.result()
+                    all_results.extend(results)
+                    if results:
+                        logger.debug(f"  {col_name}: {len(results)} results")
+                except Exception as e:
+                    logger.warning(f"Error searching device collection '{col_name}': {e}")
+
+        # Sort by confidence descending
+        all_results.sort(key=lambda x: x.confidence, reverse=True)
+
+        # Return more results to account for multiple collections
+        return all_results[:top_k * 2]
+
     def search_research_papers(self, query: str, top_k: int = 5) -> List[SearchResult]:
         """
         Search PubMed research papers ingested into the knowledge base.
@@ -1041,7 +1155,7 @@ Your answer:"""
             if file_path.exists():
                 collection = self.chroma_client.get_or_create_collection(
                     name=source.collection_key,
-                    metadata={"hnsw:space": "cosine"}
+                    metadata={"hnsw:space": "cosine", "type": "device_manual", "source_category": "device_manual"}
                 )
 
                 if collection.count() == 0:
@@ -1203,6 +1317,24 @@ class ResearcherAgent:
         else:
             return []
 
+    def search_user_sources(self, query: str) -> List[SearchResult]:
+        """
+        Search user-uploaded device manuals via dynamic collection discovery.
+
+        Uses collection metadata to find device manual collections at runtime.
+        Product-agnostic - no hardcoded device names.
+
+        Args:
+            query: Search query
+
+        Returns:
+            List of SearchResult objects from user device manual collections
+        """
+        if self.use_chromadb:
+            return self.backend.search_user_sources(query)
+        else:
+            return []
+
     def search_all_collections(
         self,
         query: str,
@@ -1284,8 +1416,9 @@ class ResearcherAgent:
             "ada_standards": self.search_ada_standards,
             "australian_guidelines": self.search_australian_guidelines,
             "research_papers": self.search_research_papers,
-            
+
             "wikipedia_education": self.search_wikipedia_education,
+            "user_sources": self.search_user_sources,
             "pubmed_research": self.search_research_papers,  # Alias
             "glooko_data": lambda q: [],  # Placeholder - handled by GlookoQueryAgent
         }
