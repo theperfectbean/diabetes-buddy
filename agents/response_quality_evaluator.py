@@ -80,6 +80,7 @@ class QualityScore:
     # Metadata
     sources_used: List[str] = field(default_factory=list)
     rag_quality: Optional[Dict[str, Any]] = None
+    provider_used: str = "groq"  # Track which LLM provider was used
     evaluation_timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     cached: bool = False
     evaluation_failed: bool = False  # Track if evaluation failed gracefully
@@ -162,6 +163,7 @@ class ResponseQualityEvaluator:
         """
         self.config = config or {}
         self.llm = llm_provider or LLMFactory.get_provider()
+        self.current_provider = self.config.get('provider', 'groq')
         self.gen_config = GenerationConfig(
             temperature=0.1,
             max_tokens=2000
