@@ -4,12 +4,12 @@ Multi-agent RAG system for Type 1 Diabetes management with mandatory safety guar
 
 ## ✨ Features
 
-- **🎯 Zero Hallucinations** - All answers grounded in uploaded medical literature
-- **🛡️ Safety-First Architecture** - Blocks harmful advice, adds medical disclaimers
+- **🎯 Source-Grounded with Safety Guardrails** - Answers grounded in RAG knowledge base with LLM parametric knowledge blending
+- **🛡️ Safety-First Architecture** - Blocks harmful advice, adds medical disclaimers, emergency fallbacks for system failures
 - **⚡ Fast Local Search** - ChromaDB vector store for <5s queries
-- **🔍 Source Citations** - Every answer includes page numbers
+- **🔍 Smart Citations** - Every answer includes source names and confidence scores
 - **🤖 MCP Integration** - Use from Claude Desktop or other MCP clients
-- **📚 Expert Knowledge Base** - 4 authoritative sources always up-to-date
+- **📤 Bring Your Own Sources** - Upload PDFs to customize knowledge base for device-specific advice
 
 ## 🚀 Quick Start
 
@@ -73,29 +73,32 @@ See [VSCODE_QUICKSTART.md](VSCODE_QUICKSTART.md) for detailed instructions.
 
 ## 📚 Knowledge Sources
 
-Diabetes Buddy includes:
+Diabetes Buddy uses a hybrid approach combining RAG-retrieved sources with LLM parametric knowledge:
 
 - **Tier 1**: ADA Standards of Care 2026 (abstracts via PMC API - auto-updated monthly)
 - **Tier 2**: OpenAPS, Loop, AndroidAPS community docs (auto-updated monthly)  
 - **Tier 3**: PubMed research, Wikipedia education (auto-updated weekly)
 
-### Optional: Enhanced ADA Full-Text
+### Bring Your Own Sources
 
-For detailed clinical recommendations beyond abstracts:
-1. Run: `python scripts/download_ada_helper.py`
-2. Follow prompts to download PDFs from diabetesjournals.org
-3. Auto-ingestion triggers when complete (~300-500 additional chunks)
+For device-specific advice, upload custom PDFs:
+1. Place device manuals (PDF format) in `docs/custom/` folder
+2. Update `PDF_PATHS` in `agents/researcher_chromadb.py` to include your sources
+3. Delete `.cache/chromadb/` to rebuild the knowledge base
+4. Restart the CLI - your device manual is now part of the system
 
-**Legal Note:** PDFs are user-provided for personal educational use only.
+**Examples:** Pump manuals, CGM guides, care plan documents, research papers specific to your diabetes management approach.
 
-### Legacy Sources
+### Built-in Sources
 
-| Source | Content | Pages |
-|--------|---------|-------|
-| **Think Like a Pancreas** | Behavioral strategies, insulin logic | ~400 |
-| **CamAPS FX Manual** | Hybrid closed-loop algorithm | ~150 |
-| **Ypsomed Pump Manual** | Hardware operation | ~200 |
-| **FreeStyle Libre 3** | CGM sensor guide | ~100 |
+| Source | Content | Status |
+|--------|---------|--------|
+| **ADA Standards** | Clinical recommendations | Auto-updated monthly |
+| **OpenAPS Docs** | Loop/Basal algorithm theory | Auto-updated monthly |
+| **Loop Docs** | DIY closed-loop setup | Auto-updated monthly |
+| **AndroidAPS** | Mobile closed-loop system | Auto-updated monthly |
+| **PubMed (via PMC)** | Peer-reviewed research | Auto-updated weekly |
+| **Wikipedia** | Educational background | Auto-updated weekly |
 
 ## 🏗️ Architecture
 
@@ -106,27 +109,33 @@ For detailed clinical recommendations beyond abstracts:
        │
        ▼
 ┌──────────────────┐
-│  Triage Agent    │  Classifies: Theory/CamAPS/Ypsomed/Libre
-│  (LiteLLM)       │  Confidence: 70%+ → Single source
-└──────┬───────────┘  Confidence: <70% → Multi-source
-       │
-       ▼
-┌──────────────────┐
-│ Researcher Agent │  ChromaDB vector search (<1s)
-│  (ChromaDB +     │  Parallel multi-source queries
-│   LiteLLM)       │  In-memory result caching
+│  Router Agent    │  Content classification + safety check
+│  (LiteLLM)       │  Route to appropriate service
 └──────┬───────────┘
        │
        ▼
-┌──────────────────┐
-│  Safety Auditor  │  Blocks specific doses
-│  (Regex + Rules) │  Injects disclaimers
-└──────┬───────────┘  Audit trail
+┌──────────────────────────────┐
+│  Researcher Agent            │  ChromaDB vector search (<1s)
+│  (ChromaDB + LiteLLM)        │  Parallel multi-source queries
+└──────┬───────────────────────┘  Source discovery & ranking
+       │
+       ▼
+┌──────────────────────────────┐
+│ Hybrid Augmentation          │  Blend RAG-retrieved evidence
+│ (RAG + Parametric Knowledge) │  with LLM parametric knowledge
+└──────┬───────────────────────┘  when RAG coverage is sparse
        │
        ▼
 ┌──────────────────┐
-│  Safe Response   │  With citations & severity level
-└──────────────────┘
+│  Safety Auditor  │  Blocks harmful patterns
+│  (Rules + LLM)   │  Emergency fallbacks on failures
+└──────┬───────────┘  Injects disclaimers & confidence levels
+       │
+       ▼
+┌──────────────────────────────┐
+│ Response with Citations      │  Source names & confidence scores
+│ & Confidence Metadata        │  Safety severity level
+└──────────────────────────────┘
 ```
 
 ## 🛡️ Safety Features
@@ -145,6 +154,35 @@ Blocks patterns like:
 ### Mandatory Disclaimers
 Every response includes:
 > **Disclaimer:** This is educational information only. Always consult your healthcare provider before making changes to your diabetes management routine.
+
+### Emergency Fallbacks
+When system failures occur on safety-critical queries (e.g., insulin dosing), provides actionable emergency guidance instead of errors:
+- Recommends device bolus calculator
+- Directs to qualified healthcare provider
+- Emergency contacts for critical blood sugar levels
+
+## ⚠️ Known Limitations
+
+### Parametric Knowledge Blending
+Responses may include LLM parametric knowledge when RAG coverage is sparse. This is:
+- **Controlled**: Safety filters still apply to all content
+- **Transparent**: System indicates confidence levels and source availability
+- **Intentional**: Better than refusing to answer or providing incomplete information
+
+### Device-Specific Advice
+- System provides generic insulin dosing guidance only
+- For device-specific advice (pump settings, CGM calibration, etc.), you must upload device manuals to `docs/custom/`
+- Without custom sources, device-specific recommendations will be generic and may not apply to your exact hardware
+
+### Safety vs. Completeness
+- System prioritizes safety over comprehensiveness
+- Some legitimate questions may receive "I'm not confident answering this" responses
+- This is intentional to avoid potentially harmful misguidance
+
+### Source Coverage
+- Built-in sources focus on T1D management theory and major open-source systems
+- Commercial systems (CamAPS, Medtronic, Tandem) require manual PDF uploads
+- Regional guidelines may not be represented (upload your local clinical guidelines)
 
 ## ⚡ Performance
 
@@ -241,11 +279,13 @@ python -m diabuddy  # Will rebuild
 
 ## 📊 Metrics
 
-- **Query Latency:** 3-5s average (down from 14-17s)
-- **Accuracy:** Grounded in source docs (no hallucinations)
-- **Safety:** 100% dose blocking, mandatory disclaimers
+- **Query Latency:** 3-5s average (3-8s for complex multi-source queries)
+- **Response Quality:** Grounded in source documents with transparent confidence scoring
+- **Safety:** 100% dose blocking, emergency fallbacks for system failures, mandatory disclaimers
 - **Cache Hit Rate:** ~80% for repeated queries
-- **Knowledge Base:** 850+ pages across 4 authoritative sources
+- **Knowledge Base:** 850+ pages across 6+ authoritative sources, expandable via custom PDFs
+
+**Note:** Response quality evaluation requires manual review. System aims for helpful, safe responses but all medical advice should be validated by qualified healthcare providers.
 
 ## 🛠️ Development
 
