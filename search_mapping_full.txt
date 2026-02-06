@@ -1,0 +1,80 @@
+============================================================
+FULL _search_categories METHOD
+============================================================
+    def _search_categories(
+        self, query: str, categories: list[QueryCategory]
+    ) -> dict[str, list[SearchResult]]:
+        """
+        Search specified categories for relevant information (in parallel).
+
+        Args:
+            query: The search query
+            categories: List of categories to search
+
+        Returns:
+            Dictionary mapping category names to search results
+        """
+        # Skip searching for glooko_data - will be handled separately
+        if QueryCategory.GLOOKO_DATA in categories:
+            categories = [c for c in categories if c != QueryCategory.GLOOKO_DATA]
+            if not categories:
+                return {}
+
+        # Build list of source keys to search
+        sources_to_search = []
+
+        # Track if we need to search the knowledge base (openaps_docs, loop_docs, etc.)
+        needs_knowledge_search = False
+
+        category_to_source = {
+            QueryCategory.CLINICAL_GUIDELINES: "clinical_guidelines",
+            QueryCategory.KNOWLEDGE_BASE: "knowledge_base",
+            QueryCategory.USER_SOURCES: "user_sources",
+        }
+
+        for category in categories:
+            if category == QueryCategory.HYBRID:
+                # Search all sources for hybrid queries
+                sources_to_search.append("clinical_guidelines")
+                needs_knowledge_search = True
+            elif category == QueryCategory.KNOWLEDGE_BASE:
+                needs_knowledge_search = True
+            elif category == QueryCategory.USER_SOURCES:
+                sources_to_search.append("user_sources")
+            elif category in category_to_source:
+                sources_to_search.append(category_to_source[category])
+
+        # Remove duplicates while preserving order
+        sources_to_search = list(dict.fromkeys(sources_to_search))
+
+        results = {}
+
+        # Execute legacy source searches in parallel
+        if sources_to_search:
+            results = self.researcher.search_multiple(query, sources_to_search)
+
+        # For THEORY and HYBRID queries, also search the new knowledge collections
+        # (openaps_docs, loop_docs, androidaps_docs, wikipedia_education, research_papers)
+        if needs_knowledge_search:
+            try:
+                knowledge_results = self.researcher.query_knowledge(query, top_k=5)
+                if knowledge_results:
+                    results["knowledge_base"] = knowledge_results
+            except Exception as e:
+                print(f"Warning: Knowledge base search failed: {e}")
+
+        return results
+
+
+============================================================
+HOW process() CALLS _search_categories
+============================================================
+  7:         Process a user query through classification, search, and synthesis.
+ 31:         # Step 2: Determine which categories to search
+ 32:         categories_to_search = [classification.category]
+ 36:             categories_to_search.extend(classification.secondary_categories)
+ 38:         logger.info(f"[TRIAGE] Categories to search: {[c.value for c in categories_to_search]}")
+ 40:         # Step 3: Search relevant knowledge sources
+ 42:         results = self._search_categories(query, categories_to_search)
+ 44:         logger.info(f"[TRIAGE] Search returned {total_chunks} chunks across {len(results)} sources")
+ 46:             print(f"[Timing] Search: {time.time() - t0:.2f}s")

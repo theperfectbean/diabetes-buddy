@@ -65,7 +65,8 @@
       "Bash(timeout 600 pytest:*)",
       "Bash(timeout 60 pytest:*)",
       "Bash(timeout 120 pytest:*)",
-      "Bash(PYTHONPATH=/home/gary/diabetes-buddy timeout 120 pytest:*)"
+      "Bash(PYTHONPATH=/home/gary/diabetes-buddy timeout 120 pytest:*)",
+      "Bash(git stash pop:*)"
     ]
   }
 }
