@@ -89,8 +89,12 @@ class ChromaDBBackend:
             project_root = Path(__file__).parent.parent
         self.project_root = Path(project_root)
 
-        # Initialize ChromaDB
-        self.db_path = self.project_root / ".cache" / "chromadb"
+        # Initialize ChromaDB (path configurable via CHROMADB_PATH env var)
+        chromadb_env = os.getenv("CHROMADB_PATH")
+        if chromadb_env:
+            self.db_path = Path(chromadb_env)
+        else:
+            self.db_path = self.project_root / ".cache" / "chromadb"
         self.db_path.mkdir(parents=True, exist_ok=True)
 
         self.chroma_client = chromadb.PersistentClient(
@@ -194,7 +198,7 @@ class ChromaDBBackend:
                     if text.strip():
                         pages.append((text, page_num))
         except Exception as e:
-            print(f"Error extracting PDF text: {e}")
+            logger.exception(f"Error extracting PDF text: {e}")
         
         return pages
     
@@ -239,7 +243,7 @@ class ChromaDBBackend:
         try:
             return self.embedding_llm.embed_text(texts)
         except Exception as e:
-            print(f"Error embedding batch: {e}")
+            logger.exception(f"Error embedding batch: {e}")
             # Retry with smaller batch on failure
             if len(texts) > 1:
                 mid = len(texts) // 2
@@ -337,7 +341,7 @@ class ChromaDBBackend:
         try:
             collection = self.chroma_client.get_collection(name=source_key)
         except Exception as e:
-            print(f"Warning: Collection '{source_key}' not found: {e}")
+            logger.warning(f"Collection '{source_key}' not found: {e}")
             return []
 
         if collection.count() == 0:
@@ -347,7 +351,7 @@ class ChromaDBBackend:
         try:
             query_embedding = self.embedding_llm.embed_text([query])[0]
         except Exception as e:
-            print(f"Error embedding query: {e}")
+            logger.exception(f"Error embedding query: {e}")
             return []
 
         # Search ChromaDB using pre-computed embedding (not query_texts)
@@ -362,7 +366,7 @@ class ChromaDBBackend:
             if "dimension" in str(e).lower():
                 logger.debug(f"Skipping collection {source_key}: embedding dimension mismatch")
                 return []
-            print(f"Error querying collection: {e}")
+            logger.exception(f"Error querying collection: {e}")
             return []
         
         # Convert to SearchResult objects
@@ -654,7 +658,7 @@ Your answer:"""
                 n_results=min(top_k, collection.count())
             )
         except Exception as e:
-            print(f"Error querying ada_standards collection: {e}")
+            logger.exception(f"Error querying ada_standards collection: {e}")
             return []
 
         # Convert to SearchResult objects with highest trust (1.0)
@@ -876,7 +880,7 @@ Your answer:"""
                 n_results=min(top_k, collection.count())
             )
         except Exception as e:
-            print(f"Error querying research papers collection: {e}")
+            logger.exception(f"Error querying research papers collection: {e}")
             return []
 
         # Convert to SearchResult objects
@@ -928,7 +932,7 @@ Your answer:"""
                 n_results=min(top_k, collection.count())
             )
         except Exception as e:
-            print(f"Error querying wikipedia_education collection: {e}")
+            logger.exception(f"Error querying wikipedia_education collection: {e}")
             return []
 
         # Convert to SearchResult objects
@@ -1186,7 +1190,7 @@ Your answer:"""
             if collection_key in self.source_trust:
                 del self.source_trust[collection_key]
         except Exception as e:
-            print(f"Warning: Could not delete collection {collection_key}: {e}")
+            logger.exception(f"Could not delete collection {collection_key}: {e}")
 
     def search_with_synthesis(self, source_key: str, query: str, top_k: int = 5) -> str:
         """
@@ -1443,7 +1447,7 @@ class ResearcherAgent:
                 try:
                     results[source] = future.result()
                 except Exception as e:
-                    print(f"Error searching {source}: {e}")
+                    logger.exception(f"Error searching {source}: {e}")
                     results[source] = []
         
         return results

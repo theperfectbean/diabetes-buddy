@@ -244,6 +244,8 @@ Supported providers: Gemini, OpenAI, Anthropic, Ollama
 GEMINI_API_KEY=your-key-here     # Required for Gemini
 GEMINI_MODEL=gemini/gemini-2.5-flash  # MUST include gemini/ prefix
 CACHE_DIR=/custom/path           # Optional
+CHROMADB_PATH=/custom/chromadb   # ChromaDB storage path (default: .cache/chromadb)
+EMBEDDING_MODEL=all-mpnet-base-v2  # Sentence transformer model for embeddings
 ```
 
 ### Backend Selection

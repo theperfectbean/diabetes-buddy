@@ -644,7 +644,10 @@ class GroqProvider(LitellmBasedProvider):
             from sentence_transformers import SentenceTransformer
             import numpy as _np
 
-            model_name = os.environ.get("LOCAL_EMBEDDING_MODEL", "all-mpnet-base-v2")
+            model_name = os.environ.get(
+                "EMBEDDING_MODEL",
+                os.environ.get("LOCAL_EMBEDDING_MODEL", "all-mpnet-base-v2"),
+            )
             model = SentenceTransformer(model_name)
             arr = model.encode(inputs, convert_to_numpy=True)
 

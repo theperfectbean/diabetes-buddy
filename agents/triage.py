@@ -50,6 +50,21 @@ class QueryCategory(Enum):
     HYBRID = "hybrid"  # Spans multiple domains
 
 
+# Complete mapping from QueryCategory to search_multiple() source keys.
+# HYBRID maps to multiple sources; all others map to a single string.
+CATEGORY_TO_SOURCE_MAP = {
+    QueryCategory.GLOOKO_DATA: "glooko_data",
+    QueryCategory.CLINICAL_GUIDELINES: "clinical_guidelines",
+    QueryCategory.USER_SOURCES: "user_sources",
+    QueryCategory.KNOWLEDGE_BASE: "knowledge_base",
+    QueryCategory.HYBRID: ["clinical_guidelines", "user_sources", "knowledge_base"],
+}
+
+# Validate on module load — every QueryCategory must be mapped
+for _cat in QueryCategory:
+    assert _cat in CATEGORY_TO_SOURCE_MAP, f"Missing mapping for {_cat}"
+
+
 @dataclass
 class Classification:
     """Query classification result."""
@@ -420,24 +435,19 @@ Rules:
         # Track if we need to search the knowledge base (openaps_docs, loop_docs, etc.)
         needs_knowledge_search = False
 
-        category_to_source = {
-            QueryCategory.CLINICAL_GUIDELINES: "clinical_guidelines",
-            QueryCategory.KNOWLEDGE_BASE: "knowledge_base",
-            QueryCategory.USER_SOURCES: "user_sources",
-        }
-
         for category in categories:
+            mapped = CATEGORY_TO_SOURCE_MAP[category]
             if category == QueryCategory.HYBRID:
-                # Search all sources for hybrid queries
+                # Search all non-knowledge sources; knowledge searched via query_knowledge below
                 sources_to_search.append("clinical_guidelines")
                 needs_knowledge_search = True
             elif category == QueryCategory.KNOWLEDGE_BASE:
                 needs_knowledge_search = True
             elif category == QueryCategory.USER_SOURCES:
-                sources_to_search.append("user_sources")
+                sources_to_search.append(mapped)
                 logger.info("Searching user device manual collections (dynamic discovery)")
-            elif category in category_to_source:
-                sources_to_search.append(category_to_source[category])
+            else:
+                sources_to_search.append(mapped)
 
         # Remove duplicates while preserving order
         sources_to_search = list(dict.fromkeys(sources_to_search))
@@ -456,7 +466,7 @@ Rules:
                 if knowledge_results:
                     results["knowledge_base"] = knowledge_results
             except Exception as e:
-                print(f"Warning: Knowledge base search failed: {e}")
+                logger.exception(f"Knowledge base search failed: {e}")
 
         return results
 
