@@ -1423,6 +1423,14 @@ class ResearcherAgent:
             "glooko_data": lambda q: [],  # Placeholder - handled by GlookoQueryAgent
         }
         
+        for source in sources:
+            if source not in search_map:
+                logger.warning(
+                    f"Source '{source}' not in search_map. "
+                    f"Available sources: {list(search_map.keys())}"
+                )
+                results[source] = []
+
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_to_source = {
                 executor.submit(search_map[source], query): source
