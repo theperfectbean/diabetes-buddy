@@ -519,9 +519,15 @@ class GroqProvider(LitellmBasedProvider):
                     content = msg.content.strip()
                     logging.info(f"[GROQ] Using content field: {len(content)} chars")
                     return content
-                
-                # If content is empty, treat as a failure to trigger fallback
-                logging.error("[GROQ] Content field empty in response")
+
+                # Fallback: reasoning models sometimes put output in reasoning field
+                if hasattr(msg, "reasoning") and msg.reasoning and msg.reasoning.strip():
+                    reasoning = msg.reasoning.strip()
+                    logging.warning(f"[GROQ] Content empty, falling back to reasoning field: {len(reasoning)} chars")
+                    return reasoning
+
+                # Both fields empty - treat as failure
+                logging.error("[GROQ] Content and reasoning fields both empty in response")
                 raise LLMProviderError("Groq returned empty content")
                 
             except (IndexError, AttributeError) as e:
@@ -590,8 +596,9 @@ class GroqProvider(LitellmBasedProvider):
 
             # Stream from Groq API via LiteLLM
             response_stream = completion(**completion_kwargs)
-            
+
             has_content_chunks = False
+            reasoning_buffer = []
 
             for chunk in response_stream:
                 try:
@@ -603,22 +610,25 @@ class GroqProvider(LitellmBasedProvider):
                             if hasattr(delta, "content") and delta.content:
                                 has_content_chunks = True
                                 yield delta.content
-                            # Only use reasoning if we haven't seen any content chunks
-                            elif not has_content_chunks and hasattr(delta, "reasoning") and delta.reasoning:
-                                logging.debug(f"[GROQ] Streaming reasoning chunk: {len(delta.reasoning)} chars")
-                                # Don't yield reasoning chunks - wait for content
+                            # Buffer reasoning as fallback in case content never arrives
+                            elif hasattr(delta, "reasoning") and delta.reasoning:
+                                reasoning_buffer.append(delta.reasoning)
                         elif hasattr(choice, "message") and choice.message:
                             msg = choice.message
-                            # ALWAYS prefer content
                             if hasattr(msg, "content") and msg.content:
                                 has_content_chunks = True
                                 yield msg.content
-                            # Never stream reasoning; wait for content only
-                            elif not has_content_chunks and hasattr(msg, "reasoning") and msg.reasoning:
-                                logging.warning("[GROQ] No content chunks; suppressing reasoning")
+                            elif hasattr(msg, "reasoning") and msg.reasoning:
+                                reasoning_buffer.append(msg.reasoning)
                 except (IndexError, AttributeError) as e:
                     logging.warning(f"[GROQ] Unexpected chunk format: {e}")
                     continue
+
+            # Fallback: if no content was streamed, yield buffered reasoning
+            if not has_content_chunks and reasoning_buffer:
+                fallback = "".join(reasoning_buffer)
+                logging.warning(f"[GROQ] No content in stream, falling back to reasoning: {len(fallback)} chars")
+                yield fallback
 
         except Exception as e:
             logging.error(f"[GROQ] Streaming failed: {e}")

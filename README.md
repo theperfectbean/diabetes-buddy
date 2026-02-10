@@ -19,6 +19,8 @@ Multi-agent RAG system for Type 1 Diabetes management with mandatory safety guar
 pip install -r requirements.txt
 ```
 
+On Linux, this project now pins CPU-only PyTorch wheels by default (no CUDA/NVIDIA packages).
+
 ### 2. Set API Key
 
 ```bash

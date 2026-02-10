@@ -1,3 +1,6 @@
+# Force CPU-only PyTorch wheels on Linux to avoid pulling CUDA/NVIDIA packages.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # LLM Provider - LiteLLM with Groq-only support
 litellm==1.57.5
 tenacity>=8.2.0  # Retry logic for LLM API calls
@@ -11,6 +14,7 @@ pydantic-settings
 fastapi
 uvicorn[standard]
 tiktoken  # For token-based text chunking
+torch==2.10.0+cpu; platform_system == "Linux"
 sentence-transformers  # Local embeddings for Groq-only workflows
 
 # Web scraping and automation

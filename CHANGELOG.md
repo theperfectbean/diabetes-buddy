@@ -1,3 +1,18 @@
+## v0.2.3 - Citation Metadata Fix (2026-02-06)
+
+### Fixed
+- **[HIGH]** Citation page numbers missing from LLM prompt - sources now include `p.XX` for page-level citations
+- **[HIGH]** Context chunks stripped of source attribution - LLM can now map content back to specific sources
+- **[HIGH]** Groq reasoning model empty content crash - now falls back to `reasoning` field instead of failing after 3 retries
+- **[LOW]** `debug_citations.py` used wrong attribute names (`page` → `page_number`, `metadata` → `context`)
+
+### Changed
+- `_format_sources_for_citation()` now creates per-page source entries (e.g., `[1] CamAPS FX Manual, p.46`)
+- `_search_knowledge_base()` context includes `[Source: Name, p.XX]` tags per chunk
+- LLM can now produce page-specific citations instead of generic `[Source limitation]` fallbacks
+- `GroqProvider.generate_text()` falls back to `reasoning` field when `content` is empty
+- `GroqProvider.generate_text_stream()` buffers reasoning chunks and yields them if no content arrives
+
 ## v0.2.2 - Architecture Audit Phase 1 & 2 (2026-02-06)
 
 ### Fixed

@@ -1357,11 +1357,11 @@ Total Readings: {metrics.get('total_glucose_readings', 0):,}
             # Calculate max confidence for response calibration
             max_confidence = max(r.confidence for r in filtered_results)
 
-            # Format results as simple text blocks (NO metadata that could leak into response)
+            # Format results with source attribution for citation
             context = ""
             for i, r in enumerate(filtered_results, 1):
-                # Just the content, no technical metadata
-                context += f"---\n{r.quote[:600]}\n\n"
+                page_info = f", p.{r.page_number}" if r.page_number else ""
+                context += f"---\n[Source: {r.source}{page_info}]\n{r.quote[:600]}\n\n"
 
             if not context.strip():
                 return None, 0.0
@@ -1451,28 +1451,36 @@ Total Readings: {metrics.get('total_glucose_readings', 0):,}
         results: list,
     ) -> str:
         """Format sources with numbered references for easy citation.
-        
+
         Creates a section that LLM can easily reference in response.
+        Includes page numbers when available for precise citations.
         Example output:
         === RETRIEVED SOURCES (CITE BY NUMBER [1], [2], etc.) ===
-        [1] OpenAPS Documentation - Autosens Algorithm
-        [2] ADA Standards of Care 2026
+        [1] CamAPS FX Manual, p.46
+        [2] CamAPS FX Manual, p.47
+        [3] ADA Standards of Care 2026
         === END SOURCES ===
         """
         if not results:
             return ""
-        
+
         source_section = "\n=== RETRIEVED SOURCES (CITE BY NUMBER [1], [2], etc.) ===\n"
-        
+
         sources_seen = set()
         source_num = 1
         for r in results:
             source_name = getattr(r, "source", "Unknown Source")
-            if source_name not in sources_seen:
-                sources_seen.add(source_name)
-                source_section += f"[{source_num}] {source_name}\n"
+            page = getattr(r, "page_number", None)
+            # Create a unique key including page to allow per-page citations
+            source_key = (source_name, page)
+            if source_key not in sources_seen:
+                sources_seen.add(source_key)
+                if page is not None:
+                    source_section += f"[{source_num}] {source_name}, p.{page}\n"
+                else:
+                    source_section += f"[{source_num}] {source_name}\n"
                 source_num += 1
-        
+
         source_section += "=== END SOURCES ===\n"
         return source_section
 
